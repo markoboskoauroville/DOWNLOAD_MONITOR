@@ -25,14 +25,31 @@ true for whatever the source is. Nothing here needs the network or a key.
     GET  /progress                 the jobs as json
     GET  /health                   200 when up
     POST /report  {id, name, have_mb, want_mb, done}   a download reporting itself
+    POST /control/<id>/pause       stop its worker; what is down stays (blobs/<etag>.incomplete)
+    POST /control/<id>/start       start, or go on from where it stopped (resume_download)
+    POST /control/<id>/restart     throw the repo's cache away and start from zero
     POST /forget/<id>              take a finished job off the page
     POST /quit                     stop the server
+
+THE CONTROL (Marko, 7.9.2026: "make this monitor also the controller of the
+download process, two ways back and forth: pause, start, restart, give me the
+control"). A job with a "repo" is downloaded by a worker this server starts
+(dlmon.py _worker: snapshot_download with resume_download=True, retried when the
+line breaks); its pid is in the job file. Pause sends it SIGTERM and the partial
+file stays in the cache as blobs/<etag>.incomplete; start picks it up from there;
+restart deletes the repo's cache folder first. A download started elsewhere is
+taken over with `dlmon.py takeover <id>` (its temp file moved into place), after
+which the page controls it too.
 """
 
 import glob
 import json
 import os
 import re
+import shutil
+import signal
+import subprocess
+import sys
 import threading
 import time
 
@@ -43,7 +60,10 @@ HOME = os.path.expanduser('~')
 DIR = os.path.join(HOME, '.download_monitor')
 JOBS = os.path.join(DIR, 'jobs')
 HUB = os.path.join(HOME, '.cache', 'huggingface', 'hub')
+LOGS = os.path.join(DIR, 'logs')
+HERE = os.path.dirname(os.path.abspath(__file__))
 os.makedirs(JOBS, exist_ok=True)
+os.makedirs(LOGS, exist_ok=True)
 
 app = Flask(__name__)
 LOCK = threading.Lock()
@@ -82,11 +102,24 @@ TQDM = re.compile(r'([\d.]+[kMG]?)/([\d.]+[kMG]?) \[[\d:]+<[\d:?]+, ([\d.]+[kMG]
 LAST = {}                    # id -> the highest have seen, so a bar never steps back
 
 
-def blob_sizes_mb(repo):
-    d = os.path.join(HUB, 'models--' + repo.replace('/', '--'), 'blobs')
+def repo_dir(repo):
+    return os.path.join(HUB, 'models--' + repo.replace('/', '--'))
+
+
+def blob_sizes_mb(repo, incomplete=False):
+    d = os.path.join(repo_dir(repo), 'blobs')
     if not os.path.isdir(d):
         return []
-    return [os.path.getsize(os.path.join(d, f)) / 1e6 for f in os.listdir(d) if not f.endswith('.incomplete')]
+    return [os.path.getsize(os.path.join(d, f)) / 1e6 for f in os.listdir(d)
+            if f.endswith('.incomplete') == incomplete]
+
+
+def pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 def in_flight_mb(tail, blobs):
@@ -112,9 +145,10 @@ def measure(job):
     want = float(job.get('want_mb') or 0)
     done = bool(job.get('done'))
     blobs = blob_sizes_mb(job['repo']) if job.get('repo') else []
-    if blobs:
-        have = max(have, sum(blobs))
-    if job.get('log'):
+    partial = sum(blob_sizes_mb(job['repo'], incomplete=True)) if job.get('repo') else 0.0
+    if blobs or partial:
+        have = max(have, sum(blobs) + partial)
+    if job.get('log') and not partial:                          # a foreign download: only its log knows
         t = log_tail(job['log'], 6000)
         if '\nDONE' in t or t.startswith('DONE'):
             done = True
@@ -129,9 +163,26 @@ def measure(job):
         done = True
     if done and want:
         have = want
+    if job.get('_reset'):
+        LAST.pop(job['id'], None)
     have = max(have, LAST.get(job['id'], 0.0)) if not done else have
     LAST[job['id']] = have
     return have, want, done
+
+
+def state_of(job, done):
+    """done | running | paused | stopped | waiting: what the page's buttons show."""
+    if done:
+        return 'done'
+    if job.get('pid') and pid_alive(job['pid']):
+        return 'running'
+    if job.get('state') == 'paused':
+        return 'paused'
+    if job.get('pid') or job.get('state') == 'stopped':
+        return 'stopped'                                        # a worker died, or the server restarted
+    if job.get('log') or job.get('have_mb'):
+        return 'running' if job.get('foreign') else 'waiting'   # someone else's download
+    return 'waiting'
 
 
 def speed_eta(jid, have, want, done):
@@ -181,9 +232,14 @@ def progress():
                 j['done'] = True
                 j['done_at'] = time.time()
                 save_job(j)
+            st = state_of(j, done)
+            if st == 'stopped' and j.get('state') == 'running':
+                j['state'] = 'stopped'
+                save_job(j)
             out.append({'id': j['id'], 'name': j.get('name') or j['id'], 'have_mb': round(have, 1),
                         'want_mb': round(want, 1), 'pct': round(100 * have / want, 1) if want else None,
                         'speed_mbs': round(speed, 3), 'eta_s': int(eta) if eta else None, 'done': done,
+                        'state': st, 'control': bool(j.get('repo')) and not j.get('foreign'),
                         'error': j.get('error'), 'started': j.get('started'), 'done_at': j.get('done_at')})
             total_have += have
             total_want += want
@@ -216,13 +272,88 @@ def report():
     return jsonify(ok=True)
 
 
+def find_job(jid):
+    for j in load_jobs():
+        if j['id'] == jid:
+            return j
+    return None
+
+
+def start_worker(j):
+    """The download, as a child of this server: dlmon.py _worker <repo> <log>."""
+    if j.get('pid') and pid_alive(j['pid']):
+        return j
+    log = j.get('log') or os.path.join(LOGS, re.sub(r'[^A-Za-z0-9_.-]', '_', j['id']) + '.log')
+    fh = open(log, 'a')
+    p = subprocess.Popen([sys.executable, os.path.join(HERE, 'dlmon.py'), '_worker', j['repo'], log],
+                         stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+    j.update({'pid': p.pid, 'log': log, 'state': 'running', 'foreign': False, 'error': None,
+              'started': j.get('started') or time.time()})
+    j.pop('done', None)
+    j.pop('done_at', None)
+    save_job(j)
+    return j
+
+
+def stop_worker(j, state='paused'):
+    pid = j.get('pid')
+    if pid and pid_alive(pid):
+        try:
+            os.killpg(os.getpgid(int(pid)), signal.SIGTERM)
+        except OSError:
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except OSError:
+                pass
+        for _ in range(30):
+            if not pid_alive(pid):
+                break
+            time.sleep(0.1)
+    j['state'] = state
+    j['pid'] = None
+    save_job(j)
+    return j
+
+
+@app.post('/control/<jid>/<action>')
+def control(jid, action):
+    with LOCK:
+        j = find_job(jid)
+        if not j:
+            return jsonify(error='no such job'), 404
+        if not j.get('repo'):
+            return jsonify(error='only a job with a repo can be controlled; report-only jobs cannot'), 400
+        if j.get('foreign'):
+            return jsonify(error='started elsewhere: dlmon.py takeover %s first' % jid), 400
+        if action == 'pause':
+            stop_worker(j, 'paused')
+        elif action == 'start':
+            start_worker(j)
+        elif action == 'restart':
+            stop_worker(j, 'paused')
+            shutil.rmtree(repo_dir(j['repo']), ignore_errors=True)
+            try:
+                os.remove(j['log'])
+            except (OSError, TypeError):
+                pass
+            LAST.pop(jid, None)
+            HISTORY.pop(jid, None)
+            start_worker(j)
+        else:
+            return jsonify(error='pause | start | restart'), 400
+    return jsonify(ok=True, state=state_of(j, False))
+
+
 @app.post('/forget/<jid>')
 def forget(jid):
     with LOCK:
         for j in load_jobs():
             if j['id'] == jid:
+                if j.get('pid') and pid_alive(j['pid']):
+                    stop_worker(j, 'stopped')
                 os.remove(j['_path'])
                 HISTORY.pop(jid, None)
+                LAST.pop(jid, None)
     return jsonify(ok=True)
 
 
@@ -261,6 +392,16 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   #empty{color:#8a8f99;margin-top:40px;text-align:center}
   .forget{color:#5a6270;font-size:12px;cursor:pointer;margin-left:10px}
   .forget:hover{color:#e08a8a}
+  .ctl{display:inline-flex;gap:6px;margin-left:12px;vertical-align:middle}
+  .ctl button{border:0;border-radius:7px;padding:3px 10px;font-size:12px;cursor:pointer;color:#fff;background:#3a4250}
+  .ctl button:hover{background:#4a5468}
+  .ctl button.go{background:#2f8f52}.ctl button.go:hover{background:#3fb862}
+  .ctl button.pause{background:#8a6a2a}.ctl button.pause:hover{background:#b08a3a}
+  .ctl button.redo{background:#5a3a3a}.ctl button.redo:hover{background:#b84040}
+  .state{font-size:12px;color:#9aa1ad;margin-left:8px;letter-spacing:.06em}
+  .job.paused .bar i{background:linear-gradient(90deg,#8a6a2a,#c9a04a)}
+  .job.paused .bar i:after,.job.stopped .bar i:after{animation:none}
+  .job.stopped .bar i{background:linear-gradient(90deg,#5a3a3a,#9a5a5a)}
   @keyframes shine{from{background-position:-220px 0}to{background-position:calc(100% + 220px) 0}}
 </style></head><body><div id="wrap">
   <div id="top"><b>DOWNLOAD MONITOR</b><span id="clock">…</span></div>
@@ -291,13 +432,23 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
         box.appendChild(el);
       }
       const pct = j.pct == null ? 0 : Math.min(100, j.pct);
-      el.className = 'job' + (j.done ? ' done' : '') + (j.error ? ' error' : '') + (!j.done && !j.speed_mbs ? ' stale' : '');
-      el.querySelector('.name').innerHTML = j.name + (j.done ? ' <span class="forget" onclick="forget(\'' + j.id + '\')">clear</span>' : '');
+      el.className = 'job ' + j.state + (j.error ? ' error' : '') + (j.state === 'running' && !j.speed_mbs ? ' stale' : '');
+      let ctl = '';
+      if (j.control) {
+        const b = (a, cls, label) => '<button class="' + cls + '" onclick="control(\'' + j.id + '\',\'' + a + '\')">' + label + '</button>';
+        if (j.state === 'running') ctl += b('pause', 'pause', '❚❚ pause');
+        else if (!j.done) ctl += b('start', 'go', '▶ ' + (j.have_mb > 1 ? 'continue' : 'start'));
+        ctl += b('restart', 'redo', '↻ restart');
+      }
+      el.querySelector('.name').innerHTML = j.name +
+        '<span class="state">' + (j.state === 'running' ? '' : j.state.toUpperCase()) + '</span>' +
+        (ctl ? '<span class="ctl">' + ctl + '</span>' : '') +
+        (j.done ? ' <span class="forget" onclick="forget(\'' + j.id + '\')">clear</span>' : '');
       el.querySelector('.meta').textContent = j.error ? j.error :
         j.done ? 'done' + (j.done_at ? ' at ' + doneAt(j.done_at) : '') + '  ·  ' + mb(j.want_mb) :
         mb(j.have_mb) + ' of ' + (j.want_mb ? mb(j.want_mb) : '?') +
-        (j.speed_mbs ? '  ·  ' + speed(j.speed_mbs) : '  ·  waiting') +
-        (j.eta_s != null ? '  ·  ' + fmt(j.eta_s) + ' left' : '');
+        (j.state !== 'running' ? '' : (j.speed_mbs ? '  ·  ' + speed(j.speed_mbs) : '  ·  waiting')) +
+        (j.state === 'running' && j.eta_s != null ? '  ·  ' + fmt(j.eta_s) + ' left' : '');
       el.querySelector('i').style.width = pct + '%';
       el.querySelector('.pct').textContent = j.pct == null ? '' : pct.toFixed(1) + '%';
     }
@@ -318,6 +469,12 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
     catch (e) { document.getElementById('clock').textContent = 'monitor not answering'; }
   }
   async function forget(id) { await fetch('/forget/' + id, {method: 'POST'}); tick(); }
+  async function control(id, action) {
+    if (action === 'restart' && !confirm('Restart from zero? What is already down is thrown away.')) return;
+    const r = await fetch('/control/' + id + '/' + action, {method: 'POST'});
+    if (!r.ok) { const e = await r.json(); alert(e.error || 'could not ' + action); }
+    tick();
+  }
   tick(); setInterval(tick, 2000);
 </script></body></html>'''
 

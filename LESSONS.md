@@ -15,3 +15,14 @@
 4. **A shared line finishes together.** Four downloads at 0.5 MB/s in total do not finish at their
    own ETAs: when the small ones land, the big ones speed up. The total bytes over the total speed
    is the honest estimate for "when is everything here".
+
+5. **A temp file can become a resumable partial.** huggingface_hub without `resume_download` writes
+   the file in flight to `hub/tmpXXXX`; with it, to `blobs/<etag>.incomplete`, and continues from that
+   size with a Range header. The bytes are the same bytes. So a download started the first way is
+   taken over by stopping it, moving its temp file (found with `lsof -p`) to
+   `blobs/<etag>.incomplete` (the etag from `get_hf_file_metadata`), and starting again with resume.
+   When two files were in flight at once, the log's tqdm lines (one per file, keyed by total) say
+   which temp file is which.
+
+6. **Only offer pause where continue is possible.** Marko's rule: a pause that throws bytes away is
+   not a pause. A download the monitor does not own shows no button until it is taken over.

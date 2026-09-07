@@ -5,9 +5,15 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
 
     dlmon.py up                         start the monitor (127.0.0.1:8833) if it is not up
     dlmon.py open                       up, and the page in Chrome
-    dlmon.py hf <repo> [--name "..."]   download a Hugging Face repo (snapshot_download) into
-                                        ~/.cache/huggingface/hub, showing on the page; blocks
-                                        until done, so run it in the background or its own tab
+    dlmon.py hf <repo> [--name "..."]   download a Hugging Face repo into ~/.cache/huggingface/hub
+                                        under the monitor's control: a worker the server owns,
+                                        resumable; returns at once, the page shows it
+    dlmon.py pause|start|restart <id>   the same buttons as on the page
+    dlmon.py takeover <id>              a download some other process started (added with
+                                        --repo and --log): its process is stopped, the temp file
+                                        it was writing is moved into the cache as the resumable
+                                        partial, and the monitor's own worker goes on from there.
+                                        Nothing already down is lost
     dlmon.py add <id> --name "..." [--want-mb N] [--repo org/name] [--log file.log]
                                         watch a download someone else started: its repo's blobs,
                                         and/or a log with tqdm lines
@@ -101,31 +107,101 @@ def flag(args, name, default=None):
     return default
 
 
+def worker(repo, log):
+    """The download itself, as the monitor's child: snapshot_download with
+    resume_download=True (the partial file stays in blobs/<etag>.incomplete, so
+    a pause, a broken line or a restart of this Mac all continue from there),
+    retried when the line breaks. Prints DONE when the whole repo is in."""
+    from huggingface_hub import snapshot_download
+    for i in range(60):
+        try:
+            print('DONE', snapshot_download(repo, resume_download=True), flush=True)
+            return 0
+        except KeyboardInterrupt:
+            return 130
+        except Exception as e:                                 # noqa: BLE001
+            print('RETRY %d: %s' % (i + 1, str(e)[:160]), flush=True)
+            time.sleep(15)
+    return 1
+
+
 def hf(repo, name=None):
-    """snapshot_download with a tqdm log the monitor reads, and a job file."""
     jid = repo.replace('/', '--')
-    log = os.path.join(LOGS, jid + '.log')
-    write_job(jid, name=name or repo.split('/')[-1], repo=repo, log=log, want_mb=repo_size_mb(repo))
-    up()
+    write_job(jid, name=name or repo.split('/')[-1], repo=repo, want_mb=repo_size_mb(repo), foreign=False)
+    if not up():
+        sys.exit('monitor did not start')
+    print(http('/control/%s/start' % jid, {}))
     print('downloading %s, watch %s' % (repo, URL))
-    # resume_download: the part already down stays in blobs/<sha>.incomplete and a
-    # broken connection (this line drops one every hour or so) continues from there
-    code = ('import time, sys\nfrom huggingface_hub import snapshot_download\n'
-            'for i in range(40):\n'
-            '    try:\n'
-            '        print("DONE", snapshot_download(%r, resume_download=True), flush=True); sys.exit(0)\n'
-            '    except SystemExit: raise\n'
-            '    except Exception as e:\n'
-            '        print("RETRY %%d: %%s" %% (i + 1, str(e)[:160]), flush=True); time.sleep(15)\n'
-            'sys.exit(1)\n') % repo
-    with open(log, 'a') as fh:
-        r = subprocess.run([PYTHON, '-c', code], stdout=fh, stderr=subprocess.STDOUT)
-    if r.returncode == 0:
-        write_job(jid, done=True, done_at=time.time())
-        print('done: %s' % repo)
-    else:
-        print('failed: see %s' % log)
-    return r.returncode
+    return 0
+
+
+def takeover(jid):
+    """Stop the process that is downloading this job's repo (found by the repo
+    name on its command line), move the temp file(s) it was writing (found
+    with lsof; huggingface_hub without resume writes to hub/tmpXXXX) into the
+    cache as blobs/<etag>.incomplete, and let the monitor's worker continue."""
+    from huggingface_hub import HfApi, hf_hub_url, get_hf_file_metadata
+    p = job_path(jid)
+    with open(p) as fh:
+        j = json.load(fh)
+    repo = j['repo']
+    hub = os.path.join(HOME, '.cache', 'huggingface', 'hub')
+    rdir = os.path.join(hub, 'models--' + repo.replace('/', '--'))
+    pids = [int(x) for x in subprocess.run(['pgrep', '-f', 'snapshot_download\\(.%s' % repo],
+                                           capture_output=True, text=True).stdout.split()]
+    tmps = []
+    for pid in pids:
+        out = subprocess.run(['lsof', '-p', str(pid)], capture_output=True, text=True).stdout
+        tmps += [l.split()[-1] for l in out.splitlines() if '/hub/tmp' in l]
+    tmps = sorted(set(tmps))
+    for pid in pids:
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+    time.sleep(1.0)
+    # which temp file is which file of the repo: by the size in flight, from the log
+    files = HfApi().model_info(repo, files_metadata=True).siblings
+    have_by_total = {}
+    if j.get('log') and os.path.isfile(j['log']):
+        import re
+        tail = open(j['log'], 'rb').read()[-8000:].decode('utf-8', 'replace')
+        for have, want, _s in re.findall(r'([\d.]+[kMG]?)/([\d.]+[kMG]?) \[[\d:]+<[\d:?]+, ([\d.]+[kMG]?B/s)\]', tail):
+            have_by_total[want] = have
+    unit = {'k': 1e3, 'M': 1e6, 'G': 1e9, '': 1}
+
+    def bytes_of(s):
+        import re
+        m = re.match(r'([\d.]+)([kMG]?)', s)
+        return float(m.group(1)) * unit[m.group(2)]
+    moved = []
+    os.makedirs(os.path.join(rdir, 'blobs'), exist_ok=True)
+    for tmp in tmps:
+        size = os.path.getsize(tmp)
+        # the repo file whose total matches a bar in the log whose "have" is nearest this temp file
+        best = None
+        for total, have in have_by_total.items():
+            if abs(bytes_of(have) - size) < 60e6:
+                cands = [f for f in files if f.size and abs(f.size - bytes_of(total)) < 0.02 * f.size]
+                if cands:
+                    best = cands[0]
+        if best is None:                                          # one file in flight: the biggest not yet in blobs
+            done_sizes = [os.path.getsize(os.path.join(rdir, 'blobs', b)) for b in os.listdir(os.path.join(rdir, 'blobs'))]
+            cands = [f for f in sorted(files, key=lambda f: -(f.size or 0)) if f.size and f.size > size and f.size not in done_sizes]
+            best = cands[0] if cands else None
+        if best is None:
+            print('could not place %s (%d MB); left where it is' % (tmp, size / 1e6))
+            continue
+        etag = get_hf_file_metadata(hf_hub_url(repo, best.rfilename)).etag
+        dest = os.path.join(rdir, 'blobs', etag + '.incomplete')
+        os.replace(tmp, dest)
+        moved.append('%s (%d MB of %d) -> %s' % (best.rfilename, size / 1e6, best.size / 1e6, os.path.basename(dest)[:20]))
+    j.update({'foreign': False, 'state': 'paused', 'pid': None, 'log': os.path.join(LOGS, jid + '.log')})
+    with open(p, 'w') as fh:
+        json.dump(j, fh, indent=1)
+    print('stopped %s, moved:\n  %s' % (pids, '\n  '.join(moved) or 'nothing'))
+    if up():
+        print(http('/control/%s/start' % jid, {}))
 
 
 def main(argv):
@@ -147,6 +223,14 @@ def main(argv):
     elif cmd == 'hf':
         name = flag(args, '--name')
         sys.exit(hf(args[0], name))
+    elif cmd == '_worker':
+        sys.exit(worker(args[0], args[1]))
+    elif cmd in ('pause', 'start', 'restart'):
+        if not up():
+            sys.exit('monitor did not start')
+        print(http('/control/%s/%s' % (args[0], cmd), {}))
+    elif cmd == 'takeover':
+        takeover(args[0])
     elif cmd == 'add':
         jid = args[0]
         name = flag(args, '--name', jid)
@@ -156,7 +240,7 @@ def main(argv):
         if want is None and repo:
             want = repo_size_mb(repo)
         p = write_job(jid, name=name, want_mb=float(want) if want else None, repo=repo,
-                      log=os.path.abspath(log) if log else None)
+                      log=os.path.abspath(log) if log else None, foreign=bool(log))
         up()
         print('watching %s (%s)' % (jid, p))
     elif cmd == 'report':

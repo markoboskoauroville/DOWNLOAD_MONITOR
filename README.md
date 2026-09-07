@@ -42,10 +42,33 @@ size, or the log says DONE, the row turns blue and stays until cleared.
 The repo's total size comes from the Hub when the network is there; without it a download still
 shows, counting up, and turns done on DONE.
 
+## The control: pause, continue, restart
+
+Marko, 7.9.2026: "make this monitor also the controller of the download process, two ways back and
+forth: I can pause any download here and start it, and restart it. Give me the control." And: "I can
+pause only the ones which can continue; if they cannot be stitched at the end, then don't."
+
+A download the monitor runs itself is a **worker** the server owns (`dlmon.py _worker`, a
+`snapshot_download` with `resume_download=True`, retried when the line breaks). Its partial file
+lives in the cache as `blobs/<etag>.incomplete`, so:
+
+- **pause** sends the worker SIGTERM; the bytes stay; the bar turns amber and says PAUSED;
+- **continue** starts a worker again and it goes on from the byte it stopped at;
+- **restart** deletes the repo's cache folder and starts from zero; the page asks first.
+
+`dlmon.py hf <repo>` starts a download this way. A download some other process started shows on the
+page but gets **no pause button**, because stopping it would lose what is down (without resume,
+huggingface_hub writes to a temp file at the cache root). `dlmon.py takeover <id>` fixes that: it
+stops the process, finds the temp file it had open (lsof), moves it into the cache under the file's
+etag as the resumable partial, and starts the monitor's own worker, which continues from that byte.
+Measured 7.9.2026: a 314 MB temp file became `…incomplete` and the bar went on at 64%.
+
+The same three actions from a shell: `dlmon.py pause|start|restart <id>`.
+
 ## The page
 
-Dark, one bar per download, a soft shine moving across a bar that is alive, blue and still when it
-is done, red on an error. Under the bars, ALL: the total, and when the last one lands. The bars
+Dark, one bar per download, a soft shine moving across a bar that is alive, amber when paused,
+blue and still when it is done, red on an error. Beside each name, its buttons. Under the bars, ALL: the total, and when the last one lands. The bars
 glide to each new width, so at two seconds a tick they are always moving.
 
 ## Ports on this Mac
