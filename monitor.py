@@ -79,38 +79,67 @@ def log_tail(path, n=4000):
 TQDM = re.compile(r'([\d.]+[kMG]?)/([\d.]+[kMG]?) \[[\d:]+<[\d:?]+, ([\d.]+[kMG]?B/s)\]')
 
 
+LAST = {}                    # id -> the highest have seen, so a bar never steps back
+
+
+def blob_sizes_mb(repo):
+    d = os.path.join(HUB, 'models--' + repo.replace('/', '--'), 'blobs')
+    if not os.path.isdir(d):
+        return []
+    return [os.path.getsize(os.path.join(d, f)) / 1e6 for f in os.listdir(d) if not f.endswith('.incomplete')]
+
+
+def in_flight_mb(tail, blobs):
+    """What the log's tqdm lines say is still coming: huggingface_hub downloads
+    several files at once, so the tail holds one bar per file; the last line of
+    each (keyed by its total) counts. A file that has reached its total and
+    already sits in the blobs is not counted twice."""
+    latest = {}
+    for have, want, _speed in TQDM.findall(tail):
+        latest[want] = have
+    total = 0.0
+    for want, have in latest.items():
+        w, h = mb_of(want), mb_of(have)
+        if h >= w - 0.5 and any(abs(b - w) <= max(1.0, w * 0.02) for b in blobs):
+            continue                                            # finished and moved into blobs
+        total += min(h, w)
+    return total
+
+
 def measure(job):
     """have_mb, want_mb, done for one job, from whatever it names."""
     have = float(job.get('have_mb') or 0)
     want = float(job.get('want_mb') or 0)
     done = bool(job.get('done'))
-    if job.get('repo'):
-        have = max(have, blobs_mb(job['repo']))
+    blobs = blob_sizes_mb(job['repo']) if job.get('repo') else []
+    if blobs:
+        have = max(have, sum(blobs))
     if job.get('log'):
-        t = log_tail(job['log'])
+        t = log_tail(job['log'], 6000)
         if '\nDONE' in t or t.startswith('DONE'):
             done = True
-        m = TQDM.findall(t)
-        if m and not done:
-            cur_have, cur_want, _speed = m[-1]
-            have += mb_of(cur_have)                  # the file in flight is in a tmp dir, not in blobs
+        elif TQDM.search(t):
+            have += in_flight_mb(t, blobs)                      # the files in flight are in a tmp dir
             if not want:
-                want = mb_of(cur_want)
-        if 'Traceback' in t or 'Error' in t.split('\n')[-1]:
-            job['error'] = t.strip().split('\n')[-1][:160]
+                want = sum(mb_of(w) for w in {m[1] for m in TQDM.findall(t)})
+        last = t.strip().split('\n')[-1]
+        if 'Traceback' in t or 'Error' in last:
+            job['error'] = last[:160]
     if want and have >= want - 0.5:
         done = True
     if done and want:
         have = want
+    have = max(have, LAST.get(job['id'], 0.0)) if not done else have
+    LAST[job['id']] = have
     return have, want, done
 
 
 def speed_eta(jid, have, want, done):
     now = time.time()
     h = HISTORY.setdefault(jid, [])
-    h.append((now, have))
-    del h[:-40]
-    h[:] = [(t, v) for t, v in h if now - t <= 90]
+    if not h or have != h[-1][1] or now - h[-1][0] > 20:
+        h.append((now, have))
+    h[:] = [(t, v) for t, v in h if now - t <= 300][-200:]
     if done or len(h) < 2:
         return 0.0, None
     (t0, v0), (t1, v1) = h[0], h[-1]
