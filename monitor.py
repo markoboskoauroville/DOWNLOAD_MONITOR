@@ -203,6 +203,29 @@ def speed_eta(jid, have, want, done):
     return speed, ((want - have) / speed if want and speed > 0 else None)
 
 
+DISK = {'at': 0, 'hub_mb': 0, 'free_gb': 0, 'session_mb': 0}
+
+
+def disk_stats():
+    """What the model cache takes on disk, what is free, and how much this
+    monitor has brought down since its jobs began (finished plus partial
+    bytes of every job on the page). du is slow; once a minute is enough."""
+    now = time.time()
+    if now - DISK['at'] > 60:
+        try:
+            r = subprocess.run(['du', '-sk', HUB], capture_output=True, text=True, timeout=30)
+            DISK['hub_mb'] = int(r.stdout.split()[0]) / 1024.0
+        except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+            pass
+        try:
+            st = os.statvfs(HOME)
+            DISK['free_gb'] = st.f_bavail * st.f_frsize / 1e9
+        except OSError:
+            pass
+        DISK['at'] = now
+    return {'hub_mb': round(DISK['hub_mb'], 1), 'free_gb': round(DISK['free_gb'], 1)}
+
+
 def load_jobs():
     jobs = []
     for p in sorted(glob.glob(os.path.join(JOBS, '*.json')), key=os.path.getmtime):
@@ -250,7 +273,10 @@ def progress():
             total_have += have
             total_want += want
     left = [j['eta_s'] for j in out if not j['done'] and j['eta_s']]
+    speed_all = sum(j['speed_mbs'] for j in out if not j['done'])
     return {'jobs': out, 'total_have_mb': round(total_have, 1), 'total_want_mb': round(total_want, 1),
+            'speed_mbs': round(speed_all, 3), 'speed_mbit': round(speed_all * 8, 2),
+            'disk': disk_stats(),
             'total_pct': round(100 * total_have / total_want, 1) if total_want else None,
             'last_eta_s': max(left) if left else None,
             'last_eta_at': time.strftime('%H:%M', time.localtime(time.time() + max(left))) if left else None,
@@ -400,6 +426,10 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   #all{margin-top:34px;padding-top:18px;border-top:1px solid #222a35}
   #all .name{color:#e9dcc0}
   #empty{color:#8a8f99;margin-top:40px;text-align:center}
+  #stats{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  #stats div{background:#141922;border-radius:10px;padding:10px 14px}
+  #stats b{display:block;font-size:20px;color:#e9dcc0;font-variant-numeric:tabular-nums}
+  #stats span{font-size:11px;color:#8a8f99;letter-spacing:.06em}
   .forget{color:#5a6270;font-size:12px;cursor:pointer;margin-left:10px}
   .forget:hover{color:#e08a8a}
   .ctl{display:inline-flex;gap:6px;margin-left:12px;vertical-align:middle}
@@ -440,6 +470,7 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
     <div class="row"><span class="name">ALL</span><span class="meta" id="allmeta"></span></div>
     <div class="bar"><i id="allbar"></i><span class="pct" id="allpct"></span></div>
   </div>
+  <div id="stats" hidden></div>
 </div><script src="http://127.0.0.1:8837/reader.js"></script><script>
   const fmt = s => { if (s == null) return ''; s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
     return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(x).padStart(2, '0'); };
@@ -498,6 +529,11 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
       document.getElementById('allmeta').textContent = mb(p.total_have_mb) + ' of ' + mb(p.total_want_mb) +
         (p.last_eta_s != null ? '  ·  last one in ' + fmt(p.last_eta_s) + ' (' + p.last_eta_at + ')' : '');
     }
+    const st = document.getElementById('stats'); st.hidden = p.jobs.length === 0;
+    const tile = (v, l) => '<div><b>' + v + '</b><span>' + l + '</span></div>';
+    st.innerHTML = tile(mb(p.total_have_mb), 'DOWNLOADED, THESE JOBS') + tile(mb(p.total_want_mb - p.total_have_mb), 'STILL TO COME') +
+      tile(p.speed_mbit.toFixed(1) + ' Mbit/s', 'OVERALL SPEED  (' + speed(p.speed_mbs) + ')') +
+      tile((p.disk.hub_mb/1000).toFixed(1) + ' GB', 'MODELS ON DISK (~/.cache/huggingface)') + tile(p.disk.free_gb + ' GB', 'FREE ON THE DISK');
     document.getElementById('clock').textContent = p.clock;
   }
   async function tick() {
