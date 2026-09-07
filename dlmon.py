@@ -108,10 +108,18 @@ def hf(repo, name=None):
     write_job(jid, name=name or repo.split('/')[-1], repo=repo, log=log, want_mb=repo_size_mb(repo))
     up()
     print('downloading %s, watch %s' % (repo, URL))
+    # resume_download: the part already down stays in blobs/<sha>.incomplete and a
+    # broken connection (this line drops one every hour or so) continues from there
+    code = ('import time, sys\nfrom huggingface_hub import snapshot_download\n'
+            'for i in range(40):\n'
+            '    try:\n'
+            '        print("DONE", snapshot_download(%r, resume_download=True), flush=True); sys.exit(0)\n'
+            '    except SystemExit: raise\n'
+            '    except Exception as e:\n'
+            '        print("RETRY %%d: %%s" %% (i + 1, str(e)[:160]), flush=True); time.sleep(15)\n'
+            'sys.exit(1)\n') % repo
     with open(log, 'a') as fh:
-        r = subprocess.run([PYTHON, '-c', 'from huggingface_hub import snapshot_download\n'
-                            'print("DONE", snapshot_download(%r), flush=True)' % repo],
-                           stdout=fh, stderr=subprocess.STDOUT)
+        r = subprocess.run([PYTHON, '-c', code], stdout=fh, stderr=subprocess.STDOUT)
     if r.returncode == 0:
         write_job(jid, done=True, done_at=time.time())
         print('done: %s' % repo)
