@@ -16,7 +16,10 @@ written by dlmon.py (next to this file) or by anyone:
       "log": "/path/to/a/tqdm.log",                     # a log with tqdm lines: the file in flight
       "have_mb": 0, "done": false }                     # or reported directly, POST /report
 
-The page asks /progress every two seconds; the bars glide to their new width.
+The page asks /progress every second (a setting on the page, kept in the
+browser); the bars glide to their new width. Every job carries an "info" note:
+what the file is, why it is downloaded, what it does on this Mac; the page shows
+it in a box that opens under the bar.
 Speed and ETA are measured here from the last minute of samples, so they are
 true for whatever the source is. Nothing here needs the network or a key.
 
@@ -238,13 +241,19 @@ def progress():
                 save_job(j)
             out.append({'id': j['id'], 'name': j.get('name') or j['id'], 'have_mb': round(have, 1),
                         'want_mb': round(want, 1), 'pct': round(100 * have / want, 1) if want else None,
-                        'speed_mbs': round(speed, 3), 'eta_s': int(eta) if eta else None, 'done': done,
+                        'speed_mbs': round(speed, 3), 'eta_s': int(eta) if eta else None,
+                        'eta_at': time.strftime('%H:%M', time.localtime(time.time() + eta)) if eta else None,
+                        'done': done,
                         'state': st, 'control': bool(j.get('repo')) and not j.get('foreign'),
+                        'info': j.get('info'), 'repo': j.get('repo'),
                         'error': j.get('error'), 'started': j.get('started'), 'done_at': j.get('done_at')})
             total_have += have
             total_want += want
+    left = [j['eta_s'] for j in out if not j['done'] and j['eta_s']]
     return {'jobs': out, 'total_have_mb': round(total_have, 1), 'total_want_mb': round(total_want, 1),
             'total_pct': round(100 * total_have / total_want, 1) if total_want else None,
+            'last_eta_s': max(left) if left else None,
+            'last_eta_at': time.strftime('%H:%M', time.localtime(time.time() + max(left))) if left else None,
             'clock': time.strftime('%H:%M:%S'), 'at': time.time()}
 
 
@@ -267,7 +276,7 @@ def report():
         return jsonify(error='id required'), 400
     with LOCK:
         cur = {x['id']: x for x in load_jobs()}.get(j['id'], {'id': j['id'], 'started': time.time()})
-        cur.update({k: v for k, v in j.items() if k in ('name', 'have_mb', 'want_mb', 'done', 'repo', 'log')})
+        cur.update({k: v for k, v in j.items() if k in ('name', 'have_mb', 'want_mb', 'done', 'repo', 'log', 'info')})
         save_job(cur)
     return jsonify(ok=True)
 
@@ -365,6 +374,7 @@ def quit_():
 
 PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Monitor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
   html,body{margin:0;background:#0f1217;color:#f2f2f2;font:15px/1.4 -apple-system,Helvetica,sans-serif}
   #wrap{max-width:900px;margin:0 auto;padding:22px 26px 40px}
@@ -378,7 +388,7 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   .bar{height:22px;background:#1c222b;border-radius:11px;overflow:hidden;position:relative}
   .bar i{display:block;height:100%;width:0;border-radius:11px;
     background:linear-gradient(90deg,#2f8f52,#3fb862 70%,#7fe09a);
-    transition:width 1.9s linear;position:relative;overflow:hidden}
+    transition:width .9s linear;position:relative;overflow:hidden}
   .bar i:after{content:"";position:absolute;inset:0;
     background:linear-gradient(90deg,transparent 0,rgba(255,255,255,.18) 50%,transparent 100%);
     background-size:220px 100%;animation:shine 1.6s linear infinite}
@@ -402,9 +412,25 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   .job.paused .bar i{background:linear-gradient(90deg,#8a6a2a,#c9a04a)}
   .job.paused .bar i:after,.job.stopped .bar i:after{animation:none}
   .job.stopped .bar i{background:linear-gradient(90deg,#5a3a3a,#9a5a5a)}
+  details{margin-top:7px}
+  summary{cursor:pointer;color:#8a8f99;font-size:12px;letter-spacing:.06em;list-style:none;display:inline-block}
+  summary::-webkit-details-marker{display:none}
+  summary:before{content:"▸ ";color:#5a6270}
+  details[open] summary:before{content:"▾ "}
+  summary:hover{color:#e9dcc0}
+  .info{margin:8px 0 2px;padding:12px 16px;background:#141922;border-left:3px solid #3a4250;border-radius:6px;
+    color:#c9d0da;font-size:14px;line-height:1.5;white-space:pre-wrap}
+  .info b{color:#e9dcc0}
+  .info .repo{display:block;margin-top:8px;color:#8a8f99;font-size:12px;font-family:Menlo,monospace}
+  #set{display:flex;gap:10px;align-items:baseline;color:#8a8f99;font-size:12px}
+  #set select{background:#1c222b;color:#f2f2f2;border:1px solid #2a323f;border-radius:6px;padding:2px 6px;font-size:12px}
   @keyframes shine{from{background-position:-220px 0}to{background-position:calc(100% + 220px) 0}}
 </style></head><body><div id="wrap">
-  <div id="top"><b>DOWNLOAD MONITOR</b><span id="clock">…</span></div>
+  <div id="top"><b>DOWNLOAD MONITOR</b>
+    <span id="set">refresh every <select id="every" onchange="setEvery(this.value)">
+      <option value="1">1 s</option><option value="2">2 s</option><option value="5">5 s</option>
+      <option value="10">10 s</option><option value="30">30 s</option></select>
+      <span id="clock">…</span></span></div>
   <div id="jobs"></div>
   <div id="empty" hidden>Nothing is downloading. <code>dlmon.py hf &lt;repo&gt;</code> starts one that shows here.</div>
   <div id="all" hidden>
@@ -428,7 +454,8 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
       if (!el) {
         el = document.createElement('div'); el.id = 'j-' + j.id; el.className = 'job';
         el.innerHTML = '<div class="row"><span class="name"></span><span class="meta"></span></div>' +
-                       '<div class="bar"><i></i><span class="pct"></span></div>';
+                       '<div class="bar"><i></i><span class="pct"></span></div>' +
+                       '<details><summary>what is this, and why</summary><div class="info"></div></details>';
         box.appendChild(el);
       }
       const pct = j.pct == null ? 0 : Math.min(100, j.pct);
@@ -448,9 +475,14 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
         j.done ? 'done' + (j.done_at ? ' at ' + doneAt(j.done_at) : '') + '  ·  ' + mb(j.want_mb) :
         mb(j.have_mb) + ' of ' + (j.want_mb ? mb(j.want_mb) : '?') +
         (j.state !== 'running' ? '' : (j.speed_mbs ? '  ·  ' + speed(j.speed_mbs) : '  ·  waiting')) +
-        (j.state === 'running' && j.eta_s != null ? '  ·  ' + fmt(j.eta_s) + ' left' : '');
+        (j.state === 'running' && j.eta_s != null ? '  ·  ' + fmt(j.eta_s) + ' left (' + j.eta_at + ')' : '');
       el.querySelector('i').style.width = pct + '%';
       el.querySelector('.pct').textContent = j.pct == null ? '' : pct.toFixed(1) + '%';
+      const info = el.querySelector('.info');
+      const text = (j.info || 'No note was written for this download.').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+      const html = text + (j.repo ? '<span class="repo">' + j.repo + '  ·  ~/.cache/huggingface/hub</span>' : '');
+      if (info.dataset.html !== html) { info.innerHTML = html; info.dataset.html = html; }
     }
     for (const el of [...box.children]) if (!seen.has(el.id.slice(2))) el.remove();
     document.getElementById('empty').hidden = p.jobs.length > 0;
@@ -458,9 +490,8 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
     if (p.total_pct != null) {
       document.getElementById('allbar').style.width = Math.min(100, p.total_pct) + '%';
       document.getElementById('allpct').textContent = p.total_pct.toFixed(1) + '%';
-      const left = p.jobs.filter(j => !j.done && j.eta_s != null).map(j => j.eta_s);
       document.getElementById('allmeta').textContent = mb(p.total_have_mb) + ' of ' + mb(p.total_want_mb) +
-        (left.length ? '  ·  last one in ' + fmt(Math.max(...left)) : '');
+        (p.last_eta_s != null ? '  ·  last one in ' + fmt(p.last_eta_s) + ' (' + p.last_eta_at + ')' : '');
     }
     document.getElementById('clock').textContent = p.clock;
   }
@@ -475,8 +506,35 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
     if (!r.ok) { const e = await r.json(); alert(e.error || 'could not ' + action); }
     tick();
   }
-  tick(); setInterval(tick, 2000);
+  let timer = null;
+  function setEvery(v) {
+    v = Math.max(1, parseInt(v, 10) || 1);
+    try { localStorage.setItem('every', v); } catch (e) {}
+    document.getElementById('every').value = String(v);
+    if (timer) clearInterval(timer);
+    timer = setInterval(tick, v * 1000);
+  }
+  let saved = 1; try { saved = parseInt(localStorage.getItem('every'), 10) || 1; } catch (e) {}
+  tick(); setEvery(saved);
 </script></body></html>'''
+
+
+FAVICON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+           '<rect width="64" height="64" rx="14" fill="#0f1217"/>'
+           '<path d="M32 10v28" stroke="#3fb862" stroke-width="7" stroke-linecap="round"/>'
+           '<path d="M19 27l13 13 13-13" fill="none" stroke="#3fb862" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>'
+           '<path d="M12 44v6a4 4 0 0 0 4 4h32a4 4 0 0 0 4-4v-6" fill="none" stroke="#7fe09a" stroke-width="6" stroke-linecap="round"/>'
+           '</svg>')
+
+
+@app.get('/favicon.svg')
+def favicon():
+    return Response(FAVICON, mimetype='image/svg+xml')
+
+
+@app.get('/favicon.ico')
+def favicon_ico():
+    return Response(FAVICON, mimetype='image/svg+xml')
 
 
 @app.get('/')

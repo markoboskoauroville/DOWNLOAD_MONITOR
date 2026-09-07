@@ -9,6 +9,11 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
                                         under the monitor's control: a worker the server owns,
                                         resumable; returns at once, the page shows it
     dlmon.py pause|start|restart <id>   the same buttons as on the page
+    dlmon.py info <id> "text"           the note under the bar: what this file is, why we download
+                                        it, what it will do on this Mac, why we need it. **bold**
+                                        allowed. hf and add take it as --info "..." too. Marko,
+                                        7.9.2026: "I uncollapse and I see what is this file, why we
+                                        are downloading it, what it will do on my system"
     dlmon.py takeover <id>              a download some other process started (added with
                                         --repo and --log): its process is stopped, the temp file
                                         it was writing is moved into the cache as the resumable
@@ -46,7 +51,7 @@ os.makedirs(JOBS, exist_ok=True)
 os.makedirs(LOGS, exist_ok=True)
 
 
-def http(path, data=None, timeout=3):
+def http(path, data=None, timeout=20):
     req = urllib.request.Request(URL + path, data=json.dumps(data).encode() if data is not None else None,
                                  headers={'Content-Type': 'application/json'}, method='POST' if data is not None else 'GET')
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -125,9 +130,9 @@ def worker(repo, log):
     return 1
 
 
-def hf(repo, name=None):
+def hf(repo, name=None, info=None):
     jid = repo.replace('/', '--')
-    write_job(jid, name=name or repo.split('/')[-1], repo=repo, want_mb=repo_size_mb(repo), foreign=False)
+    write_job(jid, name=name or repo.split('/')[-1], repo=repo, want_mb=repo_size_mb(repo), foreign=False, info=info)
     if not up():
         sys.exit('monitor did not start')
     print(http('/control/%s/start' % jid, {}))
@@ -222,7 +227,10 @@ def main(argv):
             print('monitor was not up')
     elif cmd == 'hf':
         name = flag(args, '--name')
-        sys.exit(hf(args[0], name))
+        info = flag(args, '--info')
+        sys.exit(hf(args[0], name, info))
+    elif cmd == 'info':
+        write_job(args[0], info=' '.join(args[1:]))
     elif cmd == '_worker':
         sys.exit(worker(args[0], args[1]))
     elif cmd in ('pause', 'start', 'restart'):
@@ -237,16 +245,18 @@ def main(argv):
         want = flag(args, '--want-mb')
         repo = flag(args, '--repo')
         log = flag(args, '--log')
+        info = flag(args, '--info')
         if want is None and repo:
             want = repo_size_mb(repo)
         p = write_job(jid, name=name, want_mb=float(want) if want else None, repo=repo,
-                      log=os.path.abspath(log) if log else None, foreign=bool(log))
+                      log=os.path.abspath(log) if log else None, foreign=bool(log), info=info)
         up()
         print('watching %s (%s)' % (jid, p))
     elif cmd == 'report':
         jid, have, want = args[0], float(args[1]), float(args[2])
         name = flag(args, '--name')
-        write_job(jid, name=name, have_mb=have, want_mb=want, done='--done' in args)
+        info = flag(args, '--info')
+        write_job(jid, name=name, have_mb=have, want_mb=want, done='--done' in args, info=info)
         up()
     elif cmd == 'done':
         write_job(args[0], done=True, done_at=time.time())
@@ -265,8 +275,11 @@ def main(argv):
             sys.exit('monitor did not start')
         p = http('/progress')
         for j in p['jobs']:
-            print('%-24s %5.1f%%  %6.0f/%6.0f MB  %s' % (j['name'], j['pct'] or 0, j['have_mb'], j['want_mb'],
-                                                       'done' if j['done'] else ('%d s left' % j['eta_s'] if j['eta_s'] else '')))
+            left = ('%d:%02d left (%s)' % (j['eta_s'] // 60, j['eta_s'] % 60, j['eta_at'])) if j.get('eta_s') else j['state']
+            print('%-26s %5.1f%%  %6.0f/%6.0f MB  %s' % (j['name'], j['pct'] or 0, j['have_mb'], j['want_mb'],
+                                                       'done' if j['done'] else left))
+        if p.get('last_eta_at'):
+            print('%-26s %5.1f%%  last one at %s' % ('ALL', p['total_pct'], p['last_eta_at']))
     else:
         sys.exit('unknown command %s' % cmd)
 
