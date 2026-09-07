@@ -421,6 +421,9 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   .info{margin:8px 0 2px;padding:12px 16px;background:#141922;border-left:3px solid #3a4250;border-radius:6px;
     color:#c9d0da;font-size:14px;line-height:1.5;white-space:pre-wrap}
   .info b{color:#e9dcc0}
+  .infobar{margin:8px 0 0}
+  .infobar button{border:0;border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer;color:#0f1217;background:#e9dcc0;letter-spacing:.06em}
+  .infobar button:hover{background:#fff}
   .info .repo{display:block;margin-top:8px;color:#8a8f99;font-size:12px;font-family:Menlo,monospace}
   #set{display:flex;gap:10px;align-items:baseline;color:#8a8f99;font-size:12px}
   #set select{background:#1c222b;color:#f2f2f2;border:1px solid #2a323f;border-radius:6px;padding:2px 6px;font-size:12px}
@@ -437,7 +440,7 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
     <div class="row"><span class="name">ALL</span><span class="meta" id="allmeta"></span></div>
     <div class="bar"><i id="allbar"></i><span class="pct" id="allpct"></span></div>
   </div>
-</div><script>
+</div><script src="http://127.0.0.1:8837/reader.js"></script><script>
   const fmt = s => { if (s == null) return ''; s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
     return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(x).padStart(2, '0'); };
   const mb = v => v >= 1000 ? (v/1000).toFixed(2) + ' GB' : Math.round(v) + ' MB';
@@ -455,7 +458,9 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
         el = document.createElement('div'); el.id = 'j-' + j.id; el.className = 'job';
         el.innerHTML = '<div class="row"><span class="name"></span><span class="meta"></span></div>' +
                        '<div class="bar"><i></i><span class="pct"></span></div>' +
-                       '<details><summary>what is this, and why</summary><div class="info"></div></details>';
+                       '<details><summary>what is this, and why</summary><div class="infobar"><button class="read">▶ read it to me</button></div><div class="info"></div></details>';
+        const rb = el.querySelector('.read');
+        if (window.MantraReader) MantraReader.attach(rb, el.querySelector('.info')); else rb.hidden = true;
         box.appendChild(el);
       }
       const pct = j.pct == null ? 0 : Math.min(100, j.pct);
