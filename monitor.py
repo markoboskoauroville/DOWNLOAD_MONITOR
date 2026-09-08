@@ -14,7 +14,13 @@ written by dlmon.py (next to this file) or by anyone:
     { "id": "whisper-medium", "name": "Whisper medium", "want_mb": 1520,
       "repo": "mlx-community/whisper-medium-mlx",      # a Hugging Face repo: its blobs count
       "log": "/path/to/a/tqdm.log",                     # a log with tqdm lines: the file in flight
+      "file": "/path/to/the/file/being/written",        # any plain download (curl, a browser): its size
       "have_mb": 0, "done": false }                     # or reported directly, POST /report
+
+EVERY DOWNLOAD ON THIS MAC SHOWS HERE (Marko, 8.9.2026: "if any download is happening,
+send status to this window"): a script that fetches a file registers it first,
+    dlmon.py add <id> --name "..." --file /where/it/lands --want-mb <size>
+and the bar follows the file on disk; nothing else to report.
 
 The page asks /progress every second (a setting on the page, kept in the
 browser); the bars glide to their new width. Every job carries an "info" note:
@@ -151,6 +157,11 @@ def measure(job):
     partial = sum(blob_sizes_mb(job['repo'], incomplete=True)) if job.get('repo') else 0.0
     if blobs or partial:
         have = max(have, sum(blobs) + partial)
+    if job.get('file'):                                         # a plain file landing on disk: its size is the truth
+        try:
+            have = max(have, os.path.getsize(job['file']) / 1048576.0)
+        except OSError:
+            pass
     if job.get('log') and not partial:                          # a foreign download: only its log knows
         t = log_tail(job['log'], 6000)
         if '\nDONE' in t or t.startswith('DONE'):

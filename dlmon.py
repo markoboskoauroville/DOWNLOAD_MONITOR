@@ -19,9 +19,12 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
                                         it was writing is moved into the cache as the resumable
                                         partial, and the monitor's own worker goes on from there.
                                         Nothing already down is lost
-    dlmon.py add <id> --name "..." [--want-mb N] [--repo org/name] [--log file.log]
+    dlmon.py add <id> --name "..." [--want-mb N] [--repo org/name] [--log file.log] [--file path]
                                         watch a download someone else started: its repo's blobs,
-                                        and/or a log with tqdm lines
+                                        a log with tqdm lines, or (--file) any file growing on
+                                        disk, a curl or a browser download. THE RULE, Marko,
+                                        8.9.2026: every download on this Mac is registered here
+                                        before it starts, so the Download Monitor sees it
     dlmon.py report <id> <have_mb> <want_mb> [--name "..."] [--done]
                                         a download reporting itself (any script can curl this too)
     dlmon.py done <id>                  mark it done
@@ -245,11 +248,13 @@ def main(argv):
         want = flag(args, '--want-mb')
         repo = flag(args, '--repo')
         log = flag(args, '--log')
+        path = flag(args, '--file')                # a plain download: the file growing on disk
         info = flag(args, '--info')
         if want is None and repo:
             want = repo_size_mb(repo)
         p = write_job(jid, name=name, want_mb=float(want) if want else None, repo=repo,
-                      log=os.path.abspath(log) if log else None, foreign=bool(log), info=info)
+                      log=os.path.abspath(log) if log else None, file=os.path.abspath(path) if path else None,
+                      foreign=bool(log or path), info=info)
         up()
         print('watching %s (%s)' % (jid, p))
     elif cmd == 'report':
