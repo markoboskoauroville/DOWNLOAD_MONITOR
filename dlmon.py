@@ -271,10 +271,15 @@ def main(argv):
         except OSError:
             pass
     elif cmd == 'clear':
-        for f in os.listdir(JOBS):
-            with open(os.path.join(JOBS, f)) as fh:
-                if json.load(fh).get('done'):
-                    os.remove(os.path.join(JOBS, f))
+        # 'clear' takes the finished rows; 'clear --all' every row, stopping what still runs
+        everything = '--all' in args
+        if everything and alive():
+            http('/forget_many', {'all': True})
+        else:
+            for f in os.listdir(JOBS):
+                with open(os.path.join(JOBS, f)) as fh:
+                    if everything or json.load(fh).get('done'):
+                        os.remove(os.path.join(JOBS, f))
     elif cmd == 'list':
         if not up():
             sys.exit('monitor did not start')

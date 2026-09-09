@@ -403,6 +403,30 @@ def forget(jid):
     return jsonify(ok=True)
 
 
+@app.post('/forget_many')
+def forget_many():
+    """Delete the rows whose ids are given ({"ids": [...]}, or {"all": true}). A row still
+    downloading is stopped first. Marko, 9.9.2026: "check marks to delete entries ...
+    check all and delete all, or check individual and delete entries"."""
+    body = request.get_json(silent=True) or {}
+    wanted = None if body.get('all') else set(body.get('ids') or [])
+    gone = []
+    with LOCK:
+        for j in load_jobs():
+            if wanted is not None and j['id'] not in wanted:
+                continue
+            if j.get('pid') and pid_alive(j['pid']):
+                stop_worker(j, 'stopped')
+            try:
+                os.remove(j['_path'])
+            except OSError:
+                pass
+            HISTORY.pop(j['id'], None)
+            LAST.pop(j['id'], None)
+            gone.append(j['id'])
+    return jsonify(ok=True, gone=gone)
+
+
 @app.post('/quit')
 def quit_():
     threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -442,6 +466,15 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   #stats b{display:block;font-size:20px;color:#e9dcc0;font-variant-numeric:tabular-nums}
   #stats span{font-size:11px;color:#8a8f99;letter-spacing:.06em}
   .forget{color:#5a6270;font-size:12px;cursor:pointer;margin-left:10px}
+  .pick{width:16px;height:16px;margin:0 12px 0 0;accent-color:#3fb862;cursor:pointer;vertical-align:-2px;flex:none}
+  .row .left{display:flex;align-items:baseline;min-width:0}
+  #manage{display:none;align-items:center;gap:14px;margin-top:20px;padding:8px 12px;background:#141922;border-radius:10px;color:#8a8f99;font-size:12px;letter-spacing:.06em}
+  #manage.on{display:flex}
+  #manage label{display:flex;align-items:center;gap:8px;cursor:pointer;color:#c9d0da}
+  #manage button{border:0;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;color:#fff;background:#5a3a3a}
+  #manage button:hover{background:#b84040}
+  #manage button:disabled{background:#2a323f;color:#5a6270;cursor:default}
+  #manage .n{margin-left:auto;font-variant-numeric:tabular-nums}
   .forget:hover{color:#e08a8a}
   .ctl{display:inline-flex;gap:6px;margin-left:12px;vertical-align:middle}
   .ctl button{border:0;border-radius:7px;padding:3px 10px;font-size:12px;cursor:pointer;color:#fff;background:#3a4250}
@@ -475,6 +508,8 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
       <option value="1">1 s</option><option value="2">2 s</option><option value="5">5 s</option>
       <option value="10">10 s</option><option value="30">30 s</option></select>
       <span id="clock">…</span></span></div>
+  <div id="manage"><label><input type="checkbox" class="pick" id="pickall" onchange="pickAll(this.checked)">select all</label>
+    <button id="del" onclick="deletePicked()" disabled>✕ delete selected</button><span class="n" id="picked"></span></div>
   <div id="jobs"></div>
   <div id="empty" hidden>Nothing is downloading. <code>dlmon.py hf &lt;repo&gt;</code> starts one that shows here.</div>
   <div id="all" hidden>
@@ -498,13 +533,14 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
       let el = document.getElementById('j-' + j.id);
       if (!el) {
         el = document.createElement('div'); el.id = 'j-' + j.id; el.className = 'job';
-        el.innerHTML = '<div class="row"><span class="name"></span><span class="meta"></span></div>' +
+        el.innerHTML = '<div class="row"><span class="left"><input type="checkbox" class="pick" onchange="pick(\'' + j.id + '\', this.checked)"><span class="name"></span></span><span class="meta"></span></div>' +
                        '<div class="bar"><i></i><span class="pct"></span></div>' +
                        '<details><summary>what is this, and why</summary><div class="infobar"><button class="read">▶ read it to me</button></div><div class="info"></div></details>';
         const rb = el.querySelector('.read');
         if (window.MantraReader) MantraReader.attach(rb, el.querySelector('.info')); else rb.hidden = true;
         box.appendChild(el);
       }
+      el.querySelector('.pick').checked = picked.has(j.id);
       const pct = j.pct == null ? 0 : Math.min(100, j.pct);
       el.className = 'job ' + j.state + (j.error ? ' error' : '') + (j.state === 'running' && !j.speed_mbs ? ' stale' : '');
       let ctl = '';
@@ -532,6 +568,10 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
       if (info.dataset.html !== html) { info.innerHTML = html; info.dataset.html = html; }
     }
     for (const el of [...box.children]) if (!seen.has(el.id.slice(2))) el.remove();
+    for (const id of [...picked]) if (!seen.has(id)) picked.delete(id);
+    running = new Set(p.jobs.filter(j => j.state === 'running').map(j => j.id));
+    document.getElementById('manage').className = p.jobs.length > 0 ? 'on' : '';
+    paintPicked(p.jobs.length);
     document.getElementById('empty').hidden = p.jobs.length > 0;
     document.getElementById('all').hidden = p.jobs.length < 2;
     if (p.total_pct != null) {
@@ -552,6 +592,27 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
     catch (e) { document.getElementById('clock').textContent = 'monitor not answering'; }
   }
   async function forget(id) { await fetch('/forget/' + id, {method: 'POST'}); tick(); }
+  // the check marks: pick rows, pick all, delete what is picked (a running one is stopped first, after a question)
+  const picked = new Set(); let running = new Set();
+  function paintPicked(total) {
+    const n = picked.size;
+    document.getElementById('del').disabled = n === 0;
+    document.getElementById('picked').textContent = n ? n + ' of ' + total + ' selected' : total + ' row' + (total === 1 ? '' : 's');
+    const all = document.getElementById('pickall'); all.checked = total > 0 && n === total; all.indeterminate = n > 0 && n < total;
+  }
+  function pick(id, on) { if (on) picked.add(id); else picked.delete(id); paintPicked(document.querySelectorAll('.job').length); }
+  function pickAll(on) {
+    picked.clear();
+    for (const el of document.querySelectorAll('.job')) { const id = el.id.slice(2); el.querySelector('.pick').checked = on; if (on) picked.add(id); }
+    paintPicked(document.querySelectorAll('.job').length);
+  }
+  async function deletePicked() {
+    const ids = [...picked]; if (!ids.length) return;
+    const live = ids.filter(id => running.has(id)).length;
+    if (live && !confirm(live + ' of these ' + (ids.length === 1 ? 'is' : 'are') + ' still downloading. Stop and delete?')) return;
+    await fetch('/forget_many', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids})});
+    picked.clear(); tick();
+  }
   async function control(id, action) {
     if (action === 'restart' && !confirm('Restart from zero? What is already down is thrown away.')) return;
     const r = await fetch('/control/' + id + '/' + action, {method: 'POST'});

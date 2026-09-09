@@ -18,7 +18,16 @@ see the progress. I want to see progress indicators moving, alive."
 
 The star menu's switch is `apps/download.lua` in MANTRA_STAR: a tick starts the server detached and
 opens the page in Chrome; a second tick ends it. Its submenu, while it runs: open the page, clear
-the finished rows. Nothing runs until the box is ticked.
+the finished rows, delete every row. Nothing runs until the box is ticked.
+
+## Managing the list
+
+Marko, 9.9.2026: "sometimes I don't want to keep the whole history of downloads ... I can check all
+and delete all, or check individual and delete entries." Every row has a check box; a bar above the
+list has *select all* and *delete selected*, with the count. A selected row that is still downloading
+is stopped first, after a question. The same from outside: `POST /forget_many {"ids": [...]}` or
+`{"all": true}`, `dlmon.py clear --all` (`clear` alone still takes only the finished rows), and the
+star's *Delete every download row…*. The picks live in the page only; a reload forgets them.
 
 ## How a download gets on the page
 
