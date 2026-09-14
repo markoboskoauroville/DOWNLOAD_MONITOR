@@ -87,8 +87,8 @@ def mb_of(s):
     return float(m.group(1)) * UNIT.get(m.group(2), 1.0) if m else 0.0
 
 
-def blobs_mb(repo):
-    d = os.path.join(HUB, 'models--' + repo.replace('/', '--'), 'blobs')
+def blobs_mb(repo, hub=None):
+    d = os.path.join(hub or HUB, 'models--' + repo.replace('/', '--'), 'blobs')
     if not os.path.isdir(d):
         return 0.0
     return sum(os.path.getsize(os.path.join(d, f)) for f in os.listdir(d)
@@ -111,12 +111,14 @@ TQDM = re.compile(r'([\d.]+[kMG]?)/([\d.]+[kMG]?) \[[\d:]+<[\d:?]+, ([\d.]+[kMG]
 LAST = {}                    # id -> the highest have seen, so a bar never steps back
 
 
-def repo_dir(repo):
-    return os.path.join(HUB, 'models--' + repo.replace('/', '--'))
+def repo_dir(repo, hub=None):
+    """The repo's folder in a Hugging Face cache: the job's own hub (the voice engines
+    land in ~/Developer/VOICE_ENGINES/hub since 14.9.2026) or the default one."""
+    return os.path.join(hub or HUB, 'models--' + repo.replace('/', '--'))
 
 
-def blob_sizes_mb(repo, incomplete=False):
-    d = os.path.join(repo_dir(repo), 'blobs')
+def blob_sizes_mb(repo, incomplete=False, hub=None):
+    d = os.path.join(repo_dir(repo, hub), 'blobs')
     if not os.path.isdir(d):
         return []
     return [os.path.getsize(os.path.join(d, f)) / 1e6 for f in os.listdir(d)
@@ -153,8 +155,8 @@ def measure(job):
     have = float(job.get('have_mb') or 0)
     want = float(job.get('want_mb') or 0)
     done = bool(job.get('done'))
-    blobs = blob_sizes_mb(job['repo']) if job.get('repo') else []
-    partial = sum(blob_sizes_mb(job['repo'], incomplete=True)) if job.get('repo') else 0.0
+    blobs = blob_sizes_mb(job['repo'], hub=job.get('hub')) if job.get('repo') else []
+    partial = sum(blob_sizes_mb(job['repo'], incomplete=True, hub=job.get('hub'))) if job.get('repo') else 0.0
     if blobs or partial:
         have = max(have, sum(blobs) + partial)
     if job.get('file'):                                         # a plain file landing on disk: its size is the truth
@@ -331,7 +333,7 @@ def start_worker(j):
         return j
     log = j.get('log') or os.path.join(LOGS, re.sub(r'[^A-Za-z0-9_.-]', '_', j['id']) + '.log')
     fh = open(log, 'a')
-    p = subprocess.Popen([sys.executable, os.path.join(HERE, 'dlmon.py'), '_worker', j['repo'], log],
+    p = subprocess.Popen([sys.executable, os.path.join(HERE, 'dlmon.py'), '_worker', j['repo'], log] + ([j['hub']] if j.get('hub') else []),
                          stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
     j.update({'pid': p.pid, 'log': log, 'state': 'running', 'foreign': False, 'error': None,
               'started': j.get('started') or time.time()})
@@ -377,7 +379,7 @@ def control(jid, action):
             start_worker(j)
         elif action == 'restart':
             stop_worker(j, 'paused')
-            shutil.rmtree(repo_dir(j['repo']), ignore_errors=True)
+            shutil.rmtree(repo_dir(j['repo'], j.get('hub')), ignore_errors=True)
             try:
                 os.remove(j['log'])
             except (OSError, TypeError):

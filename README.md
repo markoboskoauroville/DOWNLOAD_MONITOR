@@ -33,7 +33,7 @@ star's *Delete every download row…*. The picks live in the page only; a reload
 
 A job file names where to look, and the monitor measures from there, every two seconds:
 
-- **a Hugging Face repo** (`"repo"`): the finished files in `~/.cache/huggingface/hub/<repo>/blobs`;
+- **a Hugging Face repo** (`"repo"`): the finished files in `~/.cache/huggingface/hub/<repo>/blobs`, or in the job's own cache folder (`"hub"`, given as `dlmon.py hf <repo> --into <folder>`; the voice engines land in `~/Developer/VOICE_ENGINES/hub` this way since 14.9.2026);
 - **a log with tqdm lines** (`"log"`): the file still in flight (huggingface_hub writes it to a
   temporary folder, so only the log knows how far it is), and `DONE` on a line of its own;
 - **a report** (`POST /report {id, name, have_mb, want_mb, done}`): any script, in any language,

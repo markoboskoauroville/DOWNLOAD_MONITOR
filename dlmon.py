@@ -5,7 +5,9 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
 
     dlmon.py up                         start the monitor (127.0.0.1:8833) if it is not up
     dlmon.py open                       up, and the page in Chrome
-    dlmon.py hf <repo> [--name "..."]   download a Hugging Face repo into ~/.cache/huggingface/hub
+    dlmon.py hf <repo> [--name "..."] [--into <hub>]   download a Hugging Face repo into ~/.cache/huggingface/hub,
+                                        or into another Hugging Face cache folder (the voice engines:
+                                        ~/Developer/VOICE_ENGINES/hub, since 14.9.2026)
                                         under the monitor's control: a worker the server owns,
                                         resumable; returns at once, the page shows it
     dlmon.py pause|start|restart <id>   the same buttons as on the page
@@ -115,15 +117,16 @@ def flag(args, name, default=None):
     return default
 
 
-def worker(repo, log):
+def worker(repo, log, hub=None):
     """The download itself, as the monitor's child: snapshot_download with
     resume_download=True (the partial file stays in blobs/<etag>.incomplete, so
     a pause, a broken line or a restart of this Mac all continue from there),
-    retried when the line breaks. Prints DONE when the whole repo is in."""
+    retried when the line breaks. Prints DONE when the whole repo is in. `hub`
+    is the cache folder to land in (the job's "hub"); none means the default."""
     from huggingface_hub import snapshot_download
     for i in range(60):
         try:
-            print('DONE', snapshot_download(repo, resume_download=True), flush=True)
+            print('DONE', snapshot_download(repo, resume_download=True, cache_dir=hub or None), flush=True)
             return 0
         except KeyboardInterrupt:
             return 130
@@ -133,9 +136,12 @@ def worker(repo, log):
     return 1
 
 
-def hf(repo, name=None, info=None):
+def hf(repo, name=None, info=None, hub=None):
     jid = repo.replace('/', '--')
-    write_job(jid, name=name or repo.split('/')[-1], repo=repo, want_mb=repo_size_mb(repo), foreign=False, info=info)
+    if hub:
+        hub = os.path.abspath(os.path.expanduser(hub))
+        os.makedirs(hub, exist_ok=True)
+    write_job(jid, name=name or repo.split('/')[-1], repo=repo, want_mb=repo_size_mb(repo), foreign=False, info=info, hub=hub)
     if not up():
         sys.exit('monitor did not start')
     print(http('/control/%s/start' % jid, {}))
@@ -153,7 +159,7 @@ def takeover(jid):
     with open(p) as fh:
         j = json.load(fh)
     repo = j['repo']
-    hub = os.path.join(HOME, '.cache', 'huggingface', 'hub')
+    hub = j.get('hub') or os.path.join(HOME, '.cache', 'huggingface', 'hub')
     rdir = os.path.join(hub, 'models--' + repo.replace('/', '--'))
     pids = [int(x) for x in subprocess.run(['pgrep', '-f', 'snapshot_download\\(.%s' % repo],
                                            capture_output=True, text=True).stdout.split()]
@@ -231,11 +237,12 @@ def main(argv):
     elif cmd == 'hf':
         name = flag(args, '--name')
         info = flag(args, '--info')
-        sys.exit(hf(args[0], name, info))
+        into = flag(args, '--into')
+        sys.exit(hf(args[0], name, info, into))
     elif cmd == 'info':
         write_job(args[0], info=' '.join(args[1:]))
     elif cmd == '_worker':
-        sys.exit(worker(args[0], args[1]))
+        sys.exit(worker(args[0], args[1], args[2] if len(args) > 2 else None))
     elif cmd in ('pause', 'start', 'restart'):
         if not up():
             sys.exit('monitor did not start')
