@@ -9,12 +9,14 @@ see the progress. I want to see progress indicators moving, alive."
 
 ## The shape
 
-    monitor.py         the Flask server: the page, /progress as json, /report, /forget, /quit, /health
-    dlmon.py           the hands: up, open, hf <repo> (a Hugging Face download that shows here),
-                       add (watch a download someone else started), report, done, forget, clear, list
-    ~/.download_monitor/jobs/<id>.json     one file per download: what it is and where to look
-    ~/.download_monitor/logs/              the tqdm logs of downloads dlmon.py hf started
-    ~/.download_monitor/monitor.log        the server's own log
+```
+monitor.py         the Flask server: the page, /progress as json, /report, /forget, /quit, /health
+dlmon.py           the hands: up, open, hf <repo> (a Hugging Face download that shows here),
+                   add (watch a download someone else started), report, done, forget, clear, list
+~/.download_monitor/jobs/<id>.json     one file per download: what it is and where to look
+~/.download_monitor/logs/              the tqdm logs of downloads dlmon.py hf started
+~/.download_monitor/monitor.log        the server's own log
+```
 
 The star menu's switch is `apps/download.lua` in MANTRA_STAR: a tick starts the server detached and
 opens the page in Chrome; a second tick ends it. Its submenu, while it runs: open the page, clear
@@ -43,10 +45,12 @@ Speed and ETA are not copied from anywhere: the monitor keeps the last minute of
 download and works them out itself, so they are true for every source. When the bytes reach the
 size, or the log says DONE, the row turns blue and stays until cleared.
 
-    python3 dlmon.py hf mlx-community/whisper-medium-mlx        # download it, and show it
-    python3 dlmon.py add my-model --name "My model" --want-mb 2048 \
-        --repo org/name --log ~/somewhere/download.log         # watch one already running
-    python3 dlmon.py list                                       # the same numbers in the terminal
+```
+python3 dlmon.py hf mlx-community/whisper-medium-mlx        # download it, and show it
+python3 dlmon.py add my-model --name "My model" --want-mb 2048 \
+    --repo org/name --log ~/somewhere/download.log         # watch one already running
+python3 dlmon.py list                                       # the same numbers in the terminal
+```
 
 The repo's total size comes from the Hub when the network is there; without it a download still
 shows, counting up, and turns done on DONE.
