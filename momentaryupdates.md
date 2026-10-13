@@ -5,4 +5,4 @@
 
 MANTRA_STAR apps/download.lua (the star's switch) and the Chrome page become "Download Monitor (Mantra).app", a native
 window. The server (monitor.py, :8833) and dlmon.py stay exactly as they are: every session calls them.
-**Status:** in progress.
+**Status:** built v1 13.10.2026; checked against the running server (153 rows). Marko to try.

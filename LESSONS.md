@@ -26,3 +26,6 @@
 
 6. **Only offer pause where continue is possible.** Marko's rule: a pause that throws bytes away is
    not a pause. A download the monitor does not own shows no button until it is taken over.
+
+- (13.10.2026) To test the window without stopping the server, close it with `pkill -9 -x DownloadMonitor`: a normal quit
+  sends POST /quit.

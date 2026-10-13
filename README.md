@@ -88,3 +88,13 @@ glide to each new width, so at two seconds a tick they are always moving.
 
 8825 the sister (MANTRA CHAT), 8829 the macro recorder, 8831 the mouse, **8833 this**. Never a
 second server on another app's port; `/health` first.
+
+## The Swift window (13.10.2026)
+
+`/Applications/Download Monitor (Mantra).app` (v1, `app/App.swift`, `./build.sh`, signed "Mantra Apps") replaces the
+star's `apps/download.lua` and the Chrome page: every row with its bar, size, speed and "done at", PAUSE / START /
+RESTART for a job dlmon.py runs, FOLDER, select all / delete selected / clear finished. It reads `GET /progress` twice
+a second and acts through `POST /control/<id>/<action>` and `/forget_many`; **the server and dlmon.py are unchanged**,
+so every session keeps calling them as before. Opening the app starts `monitor.py` if :8833 is down; quitting the app
+stops it (`POST /quit`), as the star's second tick did. A download dlmon.py started keeps going (its worker has a
+session of its own); a session that needs the monitor starts it again with `dlmon.py up`.

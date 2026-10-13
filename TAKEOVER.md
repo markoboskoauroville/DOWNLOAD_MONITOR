@@ -7,3 +7,9 @@
    python. Tick "Download Monitor"; the page opens at http://127.0.0.1:8833.
 4. Without the star: `python3 dlmon.py open`. To stop: `python3 dlmon.py down`.
 5. State is under `~/.download_monitor/` (jobs, logs); nothing generated is in the repository.
+
+## The Swift window (13.10.2026)
+
+`app/App.swift`: Monitor (poll /progress every 0.5 s, the server started detached with nohup if /health fails, POST
+/quit in applicationWillTerminate), JobRow, MonitorView. FOLDER reads the job's own json in ~/.download_monitor/jobs
+for `file`, else the Hugging Face cache folder of its repo. Icon `icon/make_icon.swift`.
