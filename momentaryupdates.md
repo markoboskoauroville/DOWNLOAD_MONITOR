@@ -14,12 +14,18 @@ window. The server (monitor.py, :8833) and dlmon.py stay exactly as they are: ev
 (MANTRA_MANIFEST modules/swift-apps.md, "ON / OFF at the top of every window"; the star, STAR_SWIFT v5, now only opens apps.)
 
 1. The first row of the main window is ON / OFF in the window's own style, named after what it switches. ON is lit while
-   the app runs; OFF stops the engine cleanly and quits the app. — **Status:** started
+   the app runs; OFF stops the engine cleanly and quits the app. — **Status:** built 19.10.2026, v2: DOWNLOAD MONITOR
+   ON  OFF; OFF = NSApp.terminate, whose applicationWillTerminate POSTs /quit to the server (as the quit always did).
+   Checked by screenshot (the app was not running: opened once, then closed with pkill -9 so the server, which was
+   running, stayed up). Marko to try OFF.
 2. Closing the window leaves the app ON; the reopen (a click in the star or the Dock) shows the window again; `--login`
-   still starts without a window. — **Status:** started
+   still starts without a window. — **Status:** built 19.10.2026, v2 (it already stayed on without its window; the
+   reopen now brings it back; it has no --login).
 
 > please unify the position of the close button on every application. It's far upper right corner. There is X to close the dialog in every dialog, same.
 
 3. An ✕ at the window's far upper-right corner, on the ON / OFF row (ON / OFF at the left, ✕ at the right), grey; it
    closes the window only, the app stays ON. Every other dialog the app opens gets the same ✕. The title bar and its
-   traffic lights stay as they are. — **Status:** started
+   traffic lights stay as they are. — **Status:** built 19.10.2026, v2: ✕ (xmark, grey, 30×30) at the far right of
+   the ON / OFF row, performClose; the delete question (NSAlert) has a 28×28 ✕ in its top-right corner = Cancel (not
+   seen on screen: it needs a click). Marko to try ✕ and the delete ✕.

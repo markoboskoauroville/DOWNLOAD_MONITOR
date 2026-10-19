@@ -13,3 +13,6 @@
 `app/App.swift`: Monitor (poll /progress every 0.5 s, the server started detached with nohup if /health fails, POST
 /quit in applicationWillTerminate), JobRow, MonitorView. FOLDER reads the job's own json in ~/.download_monitor/jobs
 for `file`, else the Hugging Face cache folder of its repo. Icon `icon/make_icon.swift`.
+
+19.10.2026, v2: the ON / OFF row and the ✕ at the top of MonitorView; CloseX.put(on:) adds the ✕ to the delete NSAlert
+(stopModal = Cancel); applicationShouldHandleReopen brings the window back. Marko to try OFF, ✕ and the delete ✕.

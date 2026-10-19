@@ -4,10 +4,15 @@
 // twice a second and acts through POST /control/<id>/<action> and /forget_many. Opening the app starts the server if it
 // is down, as the star's tick did; quitting the app stops it (POST /quit), as the star's second tick did. A download
 // that dlmon.py started keeps going either way: its worker is in a session of its own.
+// v2 (19.10.2026, Marko: "In the top of every user interface, there will now be an on/off switch ... If I say on, I
+// close it's on" and "please unify the position of the close button on every application. It's far upper right
+// corner. There is X to close the dialog in every dialog, same"): the first row is DOWNLOAD MONITOR  ON  OFF with the ✕
+// at its far right. OFF quits, and the quit stops the server as before; ✕ (or the red button) closes the window only,
+// the app and the server stay ON. The delete question carries the same ✕ (= Cancel). The star only opens it now.
 import SwiftUI
 import AppKit
 
-let VERSION = 1
+let VERSION = 2
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
 let DIR = NSHomeDirectory() + "/Developer/DOWNLOAD_MONITOR"
@@ -87,6 +92,7 @@ final class Monitor: ObservableObject {
         let al = NSAlert(); al.messageText = "Delete \(ask)?"
         al.informativeText = "A download still running is stopped first."
         al.addButton(withTitle: "Delete"); al.addButton(withTitle: "Cancel")
+        CloseX.put(on: al)
         guard al.runModal() == .alertFirstButtonReturn else { return }
         post("/forget_many", ids == nil ? ["all": true] : ["ids": ids!]) { self.picked = [] }
     }
@@ -109,6 +115,22 @@ final class Monitor: ObservableObject {
         }
         said = "no folder known for \(j.name)"
     }
+}
+
+// v2 (19.10.2026): the ✕ in the top-right corner of a dialog, the same as the window's: it answers Cancel
+final class CloseX: NSObject {
+    static let shared = CloseX()
+    static func put(on al: NSAlert) {
+        al.layout()
+        guard let v = al.window.contentView else { return }
+        let x = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")!
+                            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))!, target: shared, action: #selector(cancel))
+        x.isBordered = false; x.contentTintColor = NSColor(srgbRed: 0x7A/255.0, green: 0x80/255.0, blue: 0x87/255.0, alpha: 1)
+        x.frame = NSRect(x: v.bounds.maxX - 34, y: v.bounds.maxY - 34, width: 28, height: 28); x.autoresizingMask = [.minXMargin, .minYMargin]
+        x.toolTip = "Close (the same as Cancel)"
+        v.addSubview(x)
+    }
+    @objc func cancel() { NSApp.stopModal(withCode: .alertSecondButtonReturn) }
 }
 
 struct Word: View {
@@ -167,6 +189,17 @@ struct MonitorView: View {
     @ObservedObject var m: Monitor
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // v2 (19.10.2026): ON / OFF first, in the window's own words; the ✕ at the far right closes the window only
+            HStack(spacing: 4) {
+                Text("DOWNLOAD MONITOR").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white).padding(.trailing, 6)
+                Word(text: "ON", on: true) {}.help("The Download Monitor runs")
+                Word(text: "OFF", on: false) { NSApp.terminate(nil) }.help("Quit it; the server at 8833 stops too")
+                Spacer()
+                Button(action: { (NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible })?.performClose(nil) }) {
+                    Image(systemName: "xmark").font(.system(size: 15, weight: .medium)).foregroundColor(GREY)
+                        .frame(width: 30, height: 30).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("Close the window (the Download Monitor stays ON)")
+            }.padding(.top, -12).padding(.trailing, -12)
             HStack {
                 Text("DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY)
                 Spacer()
@@ -215,6 +248,14 @@ let MONITOR = Monitor()
 // quitting the app is the star's second tick: the server stops too (download.lua's stop); workers keep going
 final class Delegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
+    // v2 (19.10.2026): the reopen (the star's row, the Dock) brings the window back, or lets the WindowGroup make a new one
+    func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        let ws = s.windows.filter { $0.isMiniaturized || $0.isVisible }
+        if ws.isEmpty { return true }
+        for w in ws { w.deminiaturize(nil); w.makeKeyAndOrderFront(nil) }
+        s.activate(ignoringOtherApps: true)
+        return false
+    }
     func applicationWillTerminate(_ n: Notification) {
         var r = URLRequest(url: URL(string: URLBASE + "/quit")!); r.httpMethod = "POST"; r.timeoutInterval = 2
         let done = DispatchSemaphore(value: 0)

@@ -7,6 +7,15 @@ Marko's request, 7.9.2026: "build this Flask app, open it in the web browser. We
 my David menu, Download Monitor. So in any chat, if there are some downloads from this code, I can
 see the progress. I want to see progress indicators moving, alive."
 
+## The Swift window: ON / OFF and the ✕ (v2, 19.10.2026)
+
+`/Applications/Download Monitor (Mantra).app` starts with **DOWNLOAD MONITOR  ON  OFF** (MANTRA_MANIFEST swift-apps.md):
+ON is lit while it runs; OFF quits it, and the quit stops the server at 8833 as before (downloads started by dlmon.py
+keep going). The ✕ at the far right of that row (Marko: *"unify the position of the close button on every application.
+It's far upper right corner. There is X to close the dialog in every dialog, same"*) closes the window only; the app and
+the server stay on, and a click on its row in the star brings the window back. The delete question has the same ✕
+(= Cancel).
+
 ## The shape
 
 ```
