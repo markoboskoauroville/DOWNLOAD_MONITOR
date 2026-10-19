@@ -17,3 +17,9 @@ window. The server (monitor.py, :8833) and dlmon.py stay exactly as they are: ev
    the app runs; OFF stops the engine cleanly and quits the app. — **Status:** started
 2. Closing the window leaves the app ON; the reopen (a click in the star or the Dock) shows the window again; `--login`
    still starts without a window. — **Status:** started
+
+> please unify the position of the close button on every application. It's far upper right corner. There is X to close the dialog in every dialog, same.
+
+3. An ✕ at the window's far upper-right corner, on the ON / OFF row (ON / OFF at the left, ✕ at the right), grey; it
+   closes the window only, the app stays ON. Every other dialog the app opens gets the same ✕. The title bar and its
+   traffic lights stay as they are. — **Status:** started
