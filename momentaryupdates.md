@@ -29,3 +29,12 @@ window. The server (monitor.py, :8833) and dlmon.py stay exactly as they are: ev
    traffic lights stay as they are. — **Status:** built 19.10.2026, v2: ✕ (xmark, grey, 30×30) at the far right of
    the ON / OFF row, performClose; the delete question (NSAlert) has a 28×28 ✕ in its top-right corner = Cancel (not
    seen on screen: it needs a click). Marko to try ✕ and the delete ✕.
+
+## 31.10.2026: ON, OFF and TOP in every application
+
+> Please go to all the interface of my applications. Each needs to have the same user interface elements. On, off and top. Please build it in every application.
+
+The first row as MANTRA_MANIFEST swift-apps.md "The first row of every app: ON OFF … TOP ✕": ON, OFF at the left, TOP
+(green: the window above every other, UserDefaults `onTop`, applied at launch) beside ✕ at the right; each an
+Accessibility button (`off`, `top`, `close`).
+**Status:** pending
