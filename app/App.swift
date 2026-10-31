@@ -9,10 +9,13 @@
 // corner. There is X to close the dialog in every dialog, same"): the first row is DOWNLOAD MONITOR  ON  OFF with the ✕
 // at its far right. OFF quits, and the quit stops the server as before; ✕ (or the red button) closes the window only,
 // the app and the server stay ON. The delete question carries the same ✕ (= Cancel). The star only opens it now.
+// v3 (31.10.2026, Marko: "Each needs to have the same user interface elements. On, off and top"): TOP left of the ✕,
+// green = the window stays above every other window (UserDefaults "onTop", applied at launch); OFF, TOP and ✕ are
+// Accessibility buttons (off, top, close: MANTRA_MANIFEST swift-apps.md).
 import SwiftUI
 import AppKit
 
-let VERSION = 2
+let VERSION = 3
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
 let DIR = NSHomeDirectory() + "/Developer/DOWNLOAD_MONITOR"
@@ -141,6 +144,29 @@ struct Word: View {
     }
 }
 
+struct TopWord: View {
+    @AppStorage("onTop") private var onTop = false
+    var body: some View {
+        Word(text: "TOP", on: onTop) { onTop.toggle(); TopWord.float(onTop) }
+            .axButton("Top", id: "top", value: onTop ? "on" : "off") { onTop.toggle(); TopWord.float(onTop) }
+            .help("Always on top: green, the window stays above every other window")
+            .onAppear { DispatchQueue.main.async { TopWord.float(onTop) } }
+    }
+    static func float(_ on: Bool) {
+        for w in NSApp.windows where w.title.hasPrefix("Download Monitor") { w.level = on ? .floating : .normal }
+    }
+}
+extension View {
+    func axButton(_ label: String, id: String, value: String? = nil, _ action: @escaping () -> Void) -> some View {
+        accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(id)
+            .accessibilityValue(value ?? "")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, action)
+    }
+}
+
 struct Bar: View {
     let pct: Double; let colour: Color
     var body: some View {
@@ -194,11 +220,14 @@ struct MonitorView: View {
                 Text("DOWNLOAD MONITOR").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white).padding(.trailing, 6)
                 Word(text: "ON", on: true) {}.help("The Download Monitor runs")
                 Word(text: "OFF", on: false) { NSApp.terminate(nil) }.help("Quit it; the server at 8833 stops too")
+                    .axButton("Off", id: "off") { DispatchQueue.main.async { NSApp.terminate(nil) } }
                 Spacer()
+                TopWord()
                 Button(action: { (NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible })?.performClose(nil) }) {
                     Image(systemName: "xmark").font(.system(size: 15, weight: .medium)).foregroundColor(GREY)
                         .frame(width: 30, height: 30).contentShape(Rectangle())
                 }.buttonStyle(.plain).help("Close the window (the Download Monitor stays ON)")
+                .accessibilityLabel("Close window").accessibilityIdentifier("close")
             }.padding(.top, -12).padding(.trailing, -12)
             HStack {
                 Text("DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY)

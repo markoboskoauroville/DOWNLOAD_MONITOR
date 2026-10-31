@@ -37,4 +37,7 @@ window. The server (monitor.py, :8833) and dlmon.py stay exactly as they are: ev
 The first row as MANTRA_MANIFEST swift-apps.md "The first row of every app: ON OFF … TOP ✕": ON, OFF at the left, TOP
 (green: the window above every other, UserDefaults `onTop`, applied at launch) beside ✕ at the right; each an
 Accessibility button (`off`, `top`, `close`).
-**Status:** pending
+**Status:** done 31.10.2026 in v3: TOP left of ✕ (green = `.floating`, `onTop`, applied at launch); OFF, TOP, ✕ carry
+Accessibility identifiers. No download running (speed 0, no row running), so the v2 copy was quit through its menu's
+Quit and v3 reopened with `--login`; the server came back on :8833 with its 458 rows. Checked by a capture of the window
+(640 pt, its only width) and `top` found through Accessibility.

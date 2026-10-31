@@ -16,3 +16,7 @@ for `file`, else the Hugging Face cache folder of its repo. Icon `icon/make_icon
 
 19.10.2026, v2: the ON / OFF row and the ✕ at the top of MonitorView; CloseX.put(on:) adds the ✕ to the delete NSAlert
 (stopModal = Cancel); applicationShouldHandleReopen brings the window back. Marko to try OFF, ✕ and the delete ✕.
+
+**31.10.2026, v3: TOP on the first row.** Marko: *"Each needs to have the same user interface elements. On, off and top"*.
+TOP left of ✕ (green = window `.floating`, UserDefaults `onTop`, applied at launch); OFF, TOP, ✕ are Accessibility
+buttons (`off`, `top`, `close`). A build is relaunched only when no row is running (`dlmon.py list`): OFF stops the server.
