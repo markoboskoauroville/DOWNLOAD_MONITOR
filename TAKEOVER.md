@@ -1,6 +1,14 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
-**State 5.11.2026: v4.** Icon like VM REMOTE: DOWNLOAD / MONITOR on the black terminal tile, orange square cursor
+**State 5.11.2026 evening: v5, Download, Copy and Move (Mantra)** (`/Applications/Download, Copy and Move (Mantra).app`,
+executable DownloadCopyMove, bundle id unchanged community.auroville.downloadmonitor). Copy/move queue: `copier.py`
+(engine, detached, one at a time), `monitor.py` (POST /copy, control pause/start/cancel for copy jobs, ensure_copier on
+every /progress and at start), `dlmon.py copy|move|queue|cancel`. Window: `app/App.swift` (top row, queue rows CopyRow,
+downloads JobRow), `app/Panes.swift` (Pane, PaneView, Sizer folder sizes). Running on 5.11.2026: the Santoshi move and
+five folder moves to /Volumes/Video_Marko (MANTRA_MANIFEST modules/file-moves.md log). Install: `gh release download v5
+-p app.zip`, ditto into /Applications, `codesign --force -s "Mantra Apps"`.
+
+Earlier: **v4.** Icon like VM REMOTE: DOWNLOAD / MONITOR on the black terminal tile, orange square cursor
 (STAR_SWIFT icons6 `terminal:#FF9F0A`). The branch is `main` (renamed from master 5.11.2026); built by GitHub Actions.
 
 

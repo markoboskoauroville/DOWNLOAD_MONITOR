@@ -29,3 +29,17 @@
 
 - (13.10.2026) To test the window without stopping the server, close it with `pkill -9 -x DownloadMonitor`: a normal quit
   sends POST /quit.
+
+- (5.11.2026) **Path Finder cannot be scripted** (`sdef` empty), so file moves got their own engine here. **/usr/bin/rsync
+  is openrsync** on this Mac (no `--info=progress2`), so the copier is Python: 8 MB chunks, fsync, `.dlmon-part`, rename.
+- (5.11.2026) **The copier must not die with the window.** Quitting the app POSTs /quit to the server; the copier is a
+  separate detached process (start_new_session) and the server restarts it from the job files. The runner never writes
+  the job file (the server and dlmon.py own it) and keys its status by a `run` id, so a retry forgets an old FAILED.
+- (5.11.2026) **APFS clones make a folder bigger on an external drive.** ~/Music/SantoshiKoncert was 242 GB by `du` but
+  360 GB of files (Ableton "Copy Project" makes clones that share blocks); the Seagate stores every byte. Check the
+  logical size (the queue's total) against the free space, not du. The copier checks the room before it starts.
+- (5.11.2026) **Resume by size and date** trusts the destination: a file with the same size and modification time is
+  skipped. The move's MD5 covers only the five largest files, so the check is count + bytes + sample, not every byte.
+- (5.11.2026) **A server-side helper that decides whether to start the copier must skip jobs already finished but not
+  yet written down**; first version waited on a finished head and never started the next job.
+- (5.11.2026) To test the window without stopping the server: `pkill -9 -x DownloadCopyMove` (a normal quit sends /quit).

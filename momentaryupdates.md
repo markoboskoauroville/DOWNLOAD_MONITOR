@@ -59,3 +59,10 @@ Quit and v3 reopened with `--login`; the server came back on :8833 with its 458 
 "This app will also have 2 windows, left and right, for copying between 2 locations manually. And it needs to always next to every folder, right, which is now, as you can see, our application Pathfinder doesn't do. Folder size— what is the folder size?"
 
 **Status:** saved first (5.11.2026, evening).
+**Status (5.11.2026, ~19:25):** v5 built by GitHub (run 42082689116, green), installed as `/Applications/Download, Copy and
+Move (Mantra).app` (the old-named app removed), running. Two panes LEFT / RIGHT with BACK | UP | HOME | VOLUMES | HIDDEN,
+free space, every folder's size (background, "…" until known); COPY → / MOVE → / ← COPY / ← MOVE into the one queue.
+Engine copier.py: one at a time, resumable, a move verified (count, bytes, MD5 of the five largest) before the original
+goes, symlink left; a drive not connected waits. Started: SantoshiKoncert (360 GB of files) then five folders to
+/Volumes/Video_Marko/From MacBook (MANTRA_MANIFEST file-moves.md). Checked by a capture of the window. Marko to try the
+panes and the buttons.

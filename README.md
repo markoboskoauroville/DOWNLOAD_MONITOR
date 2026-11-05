@@ -1,7 +1,44 @@
-# DOWNLOAD_MONITOR — the Download Monitor
+# DOWNLOAD_MONITOR — Download, Copy and Move (Mantra), once the Download Monitor
 
-**A Flask page at http://127.0.0.1:8833 with live progress bars for every download running on
-this Mac that told it, or that it can see. A tick in the David star; from any chat, any folder.**
+**Every download, copy and move on this Mac, each with its own line, in `/Applications/Download, Copy and Move
+(Mantra).app`; two panes, left and right, with the size beside every folder; ONE queue for copies and moves, one at a
+time. The server is still http://127.0.0.1:8833 and every dlmon.py command still works.**
+
+## Copy and move: one queue, one at a time (v5, 5.11.2026)
+
+Marko, 5.11.2026: *"if there is no scripting support, we need to have that. We need to use our Download app to be
+Download and Copy Move app. Rename it and copy the system of Pathfinder to show what's moving and the speed and put
+everything in the queue. We are not moving files multiple at the same time."* And: *"This app will also have 2 windows,
+left and right, for copying between 2 locations manually ... Folder size— what is the folder size?"*
+
+```
+dlmon.py copy SRC DST            a file or a folder; DST is the new full path (DST/ = into that folder)
+dlmon.py move SRC DST            the same, and the original goes only after the check, a symlink left in its place
+dlmon.py queue                   the queue in order: phase, %, GB, files, MB/s, time left, ready at, the file in hand
+dlmon.py pause|start|cancel <id> PAUSE holds the queue at that job; START continues (or retries a FAILED one); CANCEL takes it out
+POST /copy {src, dst, mode}      or {items: [...], dst_dir, mode}: what the panes send
+```
+
+- **The engine is `copier.py`**, one detached process (pid in `~/.download_monitor/copier.pid`); the server starts it
+  whenever the queue has work, so a restart of the server or the window does not stop a copy, and the queue survives
+  a restart. It never writes the job file; its progress is `~/.download_monitor/copy/<id>.json`.
+- **Resumable.** Each file goes to `<name>.dlmon-part` and is renamed when whole, times and mode set from the original;
+  a file already there with the same size and date is skipped (an earlier rsync -a or a stopped run goes on); a
+  `.dlmon-part` continues from its last byte.
+- **A move is verified before anything is deleted**: every source file at the destination with its size, the same
+  count and total bytes, the MD5 of the five largest files on both sides. Then the original is renamed aside, a symlink
+  to the new place made at the old path, and the original deleted. A failed check keeps the original: FAILED, with the
+  reason. On the same disk a move is a rename (plus the symlink).
+- **A drive not connected** (source or destination under /Volumes/<name>) is not a failure: QUEUED · DRIVE NOT
+  CONNECTED, and it starts by itself when the drive is back, also when it is pulled out in the middle.
+- **The window**: the first row DOWNLOAD, COPY AND MOVE · ON | OFF … v5 · TOP · ✕; the two panes (BACK | UP | HOME |
+  VOLUMES | HIDDEN, free space, every folder's size measured in the background by `Sizer`, "…" until known, measured
+  again when it changes or after two minutes; double click opens); COPY → / MOVE → / ← COPY / ← MOVE between them (a
+  MOVE asks first); under them the queue: MOVE/COPY, name, from → to, a hairline, DONE · PERCENT · SPEED · TIME LEFT ·
+  READY AT · FILES, the file in hand, PAUSE | CANCEL | FOLDER; then the downloads as before. Every word is a real
+  Accessibility button, orange under the mouse, red while pressed. Resizable (980×640 at least), remembers its place.
+- **Built only by GitHub Actions** (`.github/workflows/build.yml` on a push to main, release marked Latest); the icon
+  DOWNLOAD / COPY MOVE is drawn there by `icon/six_icon.swift` (a copy of STAR_SWIFT icons6) from `icon/six.json`.
 
 Marko's request, 7.9.2026: "build this Flask app, open it in the web browser. We can keep this in
 my David menu, Download Monitor. So in any chat, if there are some downloads from this code, I can
@@ -9,7 +46,7 @@ see the progress. I want to see progress indicators moving, alive."
 
 ## The Swift window: ON / OFF and the ✕ (v2, 19.10.2026)
 
-`/Applications/Download Monitor (Mantra).app` starts with **DOWNLOAD MONITOR  ON  OFF** (MANTRA_MANIFEST swift-apps.md):
+`/Applications/Download Monitor (Mantra).app` (now Download, Copy and Move (Mantra)) starts with **DOWNLOAD MONITOR  ON  OFF** (MANTRA_MANIFEST swift-apps.md):
 ON is lit while it runs; OFF quits it, and the quit stops the server at 8833 as before (downloads started by dlmon.py
 keep going). The ✕ at the far right of that row (Marko: *"unify the position of the close button on every application.
 It's far upper right corner. There is X to close the dialog in every dialog, same"*) closes the window only; the app and
