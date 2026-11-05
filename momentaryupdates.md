@@ -47,3 +47,11 @@ Quit and v3 reopened with `--login`; the server came back on :8833 with its 458 
 "please style the download monitor mantra icon to look exactly the same as VM remote. Make the text different. Download monitor full, two-line text without abbreviations, and just add an orange dot at the end or better say, square. It's the entry point in the terminal"
 **Status:** saved first.
 **Status (5.11.2026, ~12:40):** v4 built by GitHub (first workflow run), installed, running (page 200). Icon: the VM REMOTE terminal tile, DOWNLOAD / MONITOR, orange square cursor (STAR_SWIFT icons6 symbol terminal:#FF9F0A). The repo's branch renamed master → main (one branch rule).
+
+## 5.11.2026 (evening): Download, Copy and Move
+
+"Please write in the manifest any file movement I'm asking you to do. We need to use Pathfinder so I can monitor progress."
+
+"if there is no scripting support, we need to have that. We need to use our Download app to be Download and Copy Move app. Rename it and copy the system of Pathfinder to to show what's moving and the speed and put everything in the queue. We are not moving files multiple at the same time. Everything is in the queue, and in my download copy move application, I can see what's going on. And for engine behind, you choose anything what you like."
+
+**Status:** saved first.
