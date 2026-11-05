@@ -41,3 +41,8 @@ Accessibility button (`off`, `top`, `close`).
 Accessibility identifiers. No download running (speed 0, no row running), so the v2 copy was quit through its menu's
 Quit and v3 reopened with `--login`; the server came back on :8833 with its 458 rows. Checked by a capture of the window
 (640 pt, its only width) and `top` found through Accessibility.
+
+## 5.11.2026
+
+"please style the download monitor mantra icon to look exactly the same as VM remote. Make the text different. Download monitor full, two-line text without abbreviations, and just add an orange dot at the end or better say, square. It's the entry point in the terminal"
+**Status:** saved first.
