@@ -70,9 +70,12 @@ DIR = os.path.join(HOME, '.download_monitor')
 JOBS = os.path.join(DIR, 'jobs')
 HUB = os.path.join(HOME, '.cache', 'huggingface', 'hub')
 LOGS = os.path.join(DIR, 'logs')
+STATUS = os.path.join(DIR, 'copy')               # copier.py's progress, one file per copy / move job
+COPIER_PID = os.path.join(DIR, 'copier.pid')
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.makedirs(JOBS, exist_ok=True)
 os.makedirs(LOGS, exist_ok=True)
+os.makedirs(STATUS, exist_ok=True)
 
 app = Flask(__name__)
 LOCK = threading.Lock()
@@ -264,7 +267,14 @@ def progress():
     out = []
     total_have = total_want = 0.0
     with LOCK:
-        for j in load_jobs():
+        jobs = load_jobs()
+        for j in jobs:
+            if j.get('kind') in ('copy', 'move'):
+                row = copy_row(j)
+                out.append(row)
+                total_have += row['have_mb']
+                total_want += row['want_mb']
+                continue
             have, want, done = measure(j)
             speed, eta = speed_eta(j['id'], have, want, done)
             if done and not j.get('done'):
@@ -279,12 +289,14 @@ def progress():
                         'want_mb': round(want, 1), 'pct': round(100 * have / want, 1) if want else None,
                         'speed_mbs': round(speed, 3), 'eta_s': int(eta) if eta else None,
                         'eta_at': time.strftime('%H:%M', time.localtime(time.time() + eta)) if eta else None,
-                        'done': done,
+                        'done': done, 'kind': 'download',
                         'state': st, 'control': bool(j.get('repo')) and not j.get('foreign'),
                         'info': j.get('info'), 'repo': j.get('repo'),
                         'error': j.get('error'), 'started': j.get('started'), 'done_at': j.get('done_at')})
             total_have += have
             total_want += want
+    ensure_copier()
+    queue_eta(out)
     left = [j['eta_s'] for j in out if not j['done'] and j['eta_s']]
     speed_all = sum(j['speed_mbs'] for j in out if not j['done'])
     return {'jobs': out, 'total_have_mb': round(total_have, 1), 'total_want_mb': round(total_want, 1),
@@ -294,6 +306,228 @@ def progress():
             'last_eta_s': max(left) if left else None,
             'last_eta_at': time.strftime('%H:%M', time.localtime(time.time() + max(left))) if left else None,
             'clock': time.strftime('%H:%M:%S'), 'at': time.time()}
+
+
+# ------------------------------------------------------------------ copy and move: one queue, one at a time
+# Marko, 5.11.2026: "put everything in the queue. We are not moving files multiple at the same time." The job file
+# (state queued | paused | cancelled | done | failed) is written here and by dlmon.py; copier.py, one detached process,
+# runs the head of the queue and writes its progress to ~/.download_monitor/copy/<id>.json.
+
+def copier_pid():
+    try:
+        with open(COPIER_PID) as fh:
+            d = json.load(fh)
+        return d.get('pid') if pid_alive(d.get('pid')) else None, d.get('job')
+    except (OSError, ValueError):
+        return None, None
+
+
+COPIER_AT = [0.0]
+
+
+def ensure_copier(jobs=None, force=False):
+    """Start copier.py when the queue has work and no runner is alive (after a pause, a cancel, a restart)."""
+    if not force and time.time() - COPIER_AT[0] < 2:
+        return
+    COPIER_AT[0] = time.time()
+    pid, _ = copier_pid()
+    if pid:
+        return
+    q = sorted([j for j in (jobs if jobs is not None else load_jobs())
+                if j.get('kind') in ('copy', 'move') and j.get('state') in ('queued', 'paused')
+                and read_status(j).get('result') not in ('done', 'failed')],     # finished, not yet written down
+               key=lambda j: j.get('order') or 0)
+    if not q or q[0].get('state') != 'queued' or missing_drive(q[0]['src'], q[0]['dst']):
+        return                                                    # empty, held by a pause, or its drive is out
+    fh = open(os.path.join(DIR, 'copier.log'), 'a')
+    subprocess.Popen([sys.executable, os.path.join(HERE, 'copier.py')], stdout=fh, stderr=subprocess.STDOUT,
+                     start_new_session=True, cwd=HERE)
+
+
+def missing_drive(*paths):
+    """/Volumes/<name> of a path whose drive is not mounted, else None (copier.py has the same)."""
+    for pth in paths:
+        parts = os.path.abspath(pth).split('/')
+        if len(parts) > 2 and parts[1] == 'Volumes' and not os.path.ismount('/'.join(parts[:3])):
+            return '/'.join(parts[:3])
+    return None
+
+
+def status_file(jid):
+    return os.path.join(STATUS, re.sub(r'[^A-Za-z0-9_.-]', '_', jid) + '.json')
+
+
+def read_status(j):
+    try:
+        with open(status_file(j['id'])) as fh:
+            st = json.load(fh)
+        return st if st.get('run') == j.get('run') else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def stop_copier(jid=None):
+    """SIGTERM the runner (only if it is on jid, when one is given); it stops after the chunk in hand."""
+    pid, on = copier_pid()
+    if not pid or (jid and on != jid):
+        return False
+    try:
+        os.kill(int(pid), signal.SIGTERM)
+    except OSError:
+        return False
+    for _ in range(50):
+        if not pid_alive(pid):
+            break
+        time.sleep(0.1)
+    return True
+
+
+def copy_row(j):
+    st = read_status(j)
+    pid, on = copier_pid()
+    if st.get('result') == 'done' and j.get('state') != 'done':
+        j.update(state='done', done=True, done_at=st.get('at') or time.time(), error=None)
+        save_job(j)
+    elif st.get('result') == 'failed' and j.get('state') == 'queued':
+        j.update(state='failed', error=st.get('reason'))
+        save_job(j)
+    state = j.get('state') or 'queued'
+    running = state == 'queued' and pid and on == j['id']
+    total = st.get('bytes_total') or j.get('bytes_total') or 0
+    have = st.get('bytes_done') or 0
+    phase = st.get('phase') if running else None
+    gone = missing_drive(j['src'], j['dst']) if state == 'queued' else None
+    if gone:
+        phase = 'drive not connected'
+        j['_waiting'] = '%s is not connected; it starts by itself when the drive is back' % gone
+    if phase == 'verifying':
+        vt, vd = st.get('verify_total') or 0, st.get('verify_done') or 0
+        pct = round(100 * vd / vt, 1) if vt else None
+    else:
+        pct = round(100 * have / total, 1) if total else (100.0 if state == 'done' else None)
+    speed = (st.get('speed_bps') or 0) / 1e6 if running else 0.0
+    eta = st.get('eta_s') if running else None
+    if state == 'done':
+        have, pct = total, 100.0
+    return {'id': j['id'], 'name': j.get('name') or os.path.basename(j['src'].rstrip('/')), 'kind': j['kind'],
+            'src': j['src'], 'dst': j['dst'], 'have_mb': round(have / 1e6, 1), 'want_mb': round(total / 1e6, 1),
+            'pct': pct, 'speed_mbs': round(speed, 3), 'eta_s': int(eta) if eta else None,
+            'eta_at': time.strftime('%H:%M', time.localtime(time.time() + eta)) if eta else None,
+            'done': state == 'done', 'state': 'running' if running else state, 'phase': phase,
+            'current': st.get('current') if running else None,
+            'files_done': st.get('files_done') or (j.get('files_total') if state == 'done' else 0),
+            'files_total': st.get('files_total') or j.get('files_total') or 0,
+            'control': True, 'info': j.get('info') or st.get('note'), 'repo': None,
+            'error': j.get('error') if state == 'failed' else None, 'note': j.get('_waiting') or st.get('note'),
+            'started': j.get('started'), 'done_at': j.get('done_at'), 'order': j.get('order') or 0,
+            'queue_pos': None}
+
+
+def queue_eta(rows):
+    """QUEUED 2, 3 … in order, and when each will be ready at the speed the running one has now."""
+    q = sorted([r for r in rows if r['kind'] in ('copy', 'move') and r['state'] in ('running', 'queued', 'paused')],
+               key=lambda r: r['order'])
+    speed = next((r['speed_mbs'] for r in q if r['state'] == 'running'), 0)
+    left = 0.0
+    for i, r in enumerate(q, 1):
+        r['queue_pos'] = i
+        left += max(0.0, r['want_mb'] - r['have_mb'])
+        if r['state'] == 'queued' and speed > 0:
+            r['eta_s'] = int(left / speed)
+            r['eta_at'] = time.strftime('%H:%M', time.localtime(time.time() + left / speed))
+        elif r['state'] == 'running' and r['eta_s']:
+            left = max(left, r['eta_s'] * speed)
+
+
+def tree_size(src):
+    n, b = 0, 0
+    if os.path.isfile(src):
+        return 1, os.path.getsize(src)
+    for root, ds, fs in os.walk(src):
+        for f in fs:
+            p = os.path.join(root, f)
+            if not os.path.islink(p):
+                try:
+                    b += os.path.getsize(p)
+                    n += 1
+                except OSError:
+                    pass
+    return n, b
+
+
+def enqueue(kind, src, dst, name=None, info=None):
+    """A copy or move into the one queue. dst is the new full path; a dst ending in / means "into this folder"."""
+    src = os.path.abspath(os.path.expanduser(src)).rstrip('/') or '/'
+    d = os.path.expanduser(dst)
+    dst = os.path.join(os.path.abspath(d), os.path.basename(src)) if d.endswith('/') else os.path.abspath(d)
+    if kind not in ('copy', 'move'):
+        raise ValueError('copy | move')
+    if not os.path.lexists(src) and not missing_drive(src):
+        raise ValueError('not there: %s' % src)
+    if dst == src:
+        raise ValueError('the same place')
+    away = missing_drive(src, dst)
+    if not away and not os.path.isdir(os.path.dirname(dst)):
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)              # "From MacBook/Documents" and the like
+        except OSError as e:
+            raise ValueError('cannot make the destination folder %s: %s' % (os.path.dirname(dst), e))
+    for j in load_jobs():
+        if j.get('kind') in ('copy', 'move') and j.get('src') == src and j.get('dst') == dst \
+                and j.get('state') in ('queued', 'paused', 'failed'):
+            return j                                                  # already in the queue
+    n, b = tree_size(src) if os.path.lexists(src) else (0, 0)
+    now = time.time()
+    jid = '%s-%s-%s' % (kind, re.sub(r'[^A-Za-z0-9_.-]', '_', os.path.basename(src))[:40], time.strftime('%Y%m%d-%H%M%S'))
+    base, k = jid, 2
+    while os.path.exists(os.path.join(JOBS, jid + '.json')):
+        jid, k = '%s-%d' % (base, k), k + 1
+    j = {'id': jid, 'kind': kind, 'src': src, 'dst': dst, 'name': name or os.path.basename(src),
+         'state': 'queued', 'order': now, 'run': '%d' % (now * 1000), 'started': now,
+         'files_total': n, 'bytes_total': b, 'want_mb': round(b / 1e6, 1), 'info': info}
+    save_job(j)
+    return j
+
+
+@app.post('/copy')
+def copy_route():
+    """{src, dst, mode: copy|move, name?, info?} into the queue; or {items: [...], dst_dir, mode} for several."""
+    body = request.get_json(force=True, silent=True) or {}
+    mode = body.get('mode') or 'copy'
+    try:
+        with LOCK:
+            if body.get('items'):
+                made = [enqueue(mode, s, body['dst_dir'].rstrip('/') + '/', info=body.get('info')) for s in body['items']]
+            else:
+                made = [enqueue(mode, body['src'], body['dst'], body.get('name'), body.get('info'))]
+            ensure_copier(force=True)
+    except (KeyError, ValueError, OSError) as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(ok=True, ids=[j['id'] for j in made])
+
+
+def control_copy(j, action):
+    if action == 'pause':
+        if j.get('state') == 'queued':
+            j['state'] = 'paused'
+            save_job(j)
+            stop_copier(j['id'])
+    elif action in ('start', 'continue', 'restart'):
+        if j.get('state') in ('paused', 'failed', 'cancelled'):
+            if j.get('state') != 'paused':
+                j['run'] = '%d' % (time.time() * 1000)                # a new run: the failed result is forgotten
+            j.update(state='queued', error=None)
+            save_job(j)
+        ensure_copier(force=True)
+    elif action == 'cancel':
+        if j.get('state') in ('queued', 'paused', 'failed'):
+            j['state'] = 'cancelled'
+            save_job(j)
+            stop_copier(j['id'])
+            ensure_copier(force=True)
+    else:
+        return 'pause | start | cancel'
+    return None
 
 
 # ------------------------------------------------------------------ routes
@@ -369,6 +603,11 @@ def control(jid, action):
         j = find_job(jid)
         if not j:
             return jsonify(error='no such job'), 404
+        if j.get('kind') in ('copy', 'move'):
+            err = control_copy(j, action)
+            if err:
+                return jsonify(error=err), 400
+            return jsonify(ok=True, state=j.get('state'))
         if not j.get('repo'):
             return jsonify(error='only a job with a repo can be controlled; report-only jobs cannot'), 400
         if j.get('foreign'):
@@ -397,6 +636,8 @@ def forget(jid):
     with LOCK:
         for j in load_jobs():
             if j['id'] == jid:
+                if j.get('kind') in ('copy', 'move'):
+                    stop_copier(jid)
                 if j.get('pid') and pid_alive(j['pid']):
                     stop_worker(j, 'stopped')
                 os.remove(j['_path'])
@@ -417,6 +658,8 @@ def forget_many():
         for j in load_jobs():
             if wanted is not None and j['id'] not in wanted:
                 continue
+            if j.get('kind') in ('copy', 'move'):
+                stop_copier(j['id'])
             if j.get('pid') and pid_alive(j['pid']):
                 stop_worker(j, 'stopped')
             try:
@@ -435,7 +678,7 @@ def quit_():
     return jsonify(ok=True)
 
 
-PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Monitor</title>
+PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download, Copy and Move</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
@@ -505,7 +748,7 @@ PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>Download Moni
   #set select{background:#1c222b;color:#f2f2f2;border:1px solid #2a323f;border-radius:6px;padding:2px 6px;font-size:12px}
   @keyframes shine{from{background-position:-220px 0}to{background-position:calc(100% + 220px) 0}}
 </style></head><body><div id="wrap">
-  <div id="top"><b>DOWNLOAD MONITOR</b>
+  <div id="top"><b>DOWNLOAD, COPY AND MOVE</b>
     <span id="set">refresh every <select id="every" onchange="setEvery(this.value)">
       <option value="1">1 s</option><option value="2">2 s</option><option value="5">5 s</option>
       <option value="10">10 s</option><option value="30">30 s</option></select>
@@ -660,4 +903,5 @@ def page():
 if __name__ == '__main__':
     with open(os.path.join(DIR, 'monitor.pid'), 'w') as fh:
         fh.write(str(os.getpid()))
+    ensure_copier(force=True)                                         # the queue survives a restart
     app.run(host='127.0.0.1', port=PORT, debug=False, threaded=True)

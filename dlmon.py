@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dlmon.py, the hands of the Download Monitor: start the page, put a download on
+dlmon.py, the hands of Download, Copy and Move (Mantra), once the Download Monitor: start the page, put a download on
 it, run a Hugging Face download that shows there. From any chat, any folder.
 
     dlmon.py up                         start the monitor (127.0.0.1:8833) if it is not up
@@ -10,7 +10,17 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
                                         ~/Developer/VOICE_ENGINES/hub, since 14.9.2026)
                                         under the monitor's control: a worker the server owns,
                                         resumable; returns at once, the page shows it
-    dlmon.py pause|start|restart <id>   the same buttons as on the page
+    dlmon.py copy SRC DST [--name "..."] [--info "..."]
+    dlmon.py move SRC DST [--name "..."] [--info "..."]
+                                        a file or a whole folder into THE ONE QUEUE of Download, Copy and
+                                        Move (Mantra): one copy or move at a time, the rest wait in order.
+                                        DST is the new full path (DST ending in / = into that folder).
+                                        A move deletes the original only after verification (count, bytes,
+                                        MD5 of the five largest) and leaves a symlink at the old path.
+                                        Marko, 5.11.2026: "Everything is in the queue". Engine: copier.py
+    dlmon.py queue                      the copy / move queue in order, with bytes, speed, time left
+    dlmon.py cancel <id>                take a copy / move out of the queue (what is copied stays)
+    dlmon.py pause|start|restart <id>   the same buttons as on the page (pause holds the copy queue)
     dlmon.py info <id> "text"           the note under the bar: what this file is, why we download
                                         it, what it will do on this Mac, why we need it. **bold**
                                         allowed. hf and add take it as --info "..." too. Marko,
@@ -43,6 +53,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -243,6 +254,38 @@ def main(argv):
         write_job(args[0], info=' '.join(args[1:]))
     elif cmd == '_worker':
         sys.exit(worker(args[0], args[1], args[2] if len(args) > 2 else None))
+    elif cmd in ('copy', 'move'):
+        name = flag(args, '--name')
+        info = flag(args, '--info')
+        if len(args) != 2:
+            sys.exit('dlmon.py %s SRC DST' % cmd)
+        if not up():
+            sys.exit('monitor did not start')
+        try:
+            r = http('/copy', {'mode': cmd, 'src': os.path.abspath(os.path.expanduser(args[0])),
+                               'dst': (os.path.abspath(os.path.expanduser(args[1])) + ('/' if args[1].endswith('/') else '')),
+                               'name': name, 'info': info}, timeout=600)
+        except urllib.error.HTTPError as e:
+            sys.exit('%s: %s' % (cmd, json.loads(e.read().decode() or '{}').get('error', e)))
+        print('%s queued: %s  (watch it in Download, Copy and Move (Mantra), or dlmon.py queue)' % (cmd, ', '.join(r['ids'])))
+    elif cmd == 'queue':
+        if not up():
+            sys.exit('monitor did not start')
+        rows = [j for j in http('/progress')['jobs'] if j.get('kind') in ('copy', 'move')]
+        for j in sorted(rows, key=lambda j: (j.get('queue_pos') is None, j.get('queue_pos') or 0, -(j.get('order') or 0))):
+            pos = ('#%d' % j['queue_pos']) if j.get('queue_pos') else '  '
+            sp = ('  %.1f MB/s' % j['speed_mbs']) if j.get('speed_mbs') else ''
+            left = ('  %d:%02d:%02d left, ready at %s' % (j['eta_s'] // 3600, j['eta_s'] % 3600 // 60, j['eta_s'] % 60, j['eta_at'])) if j.get('eta_s') else ''
+            print('%s %-4s %-20s %5.1f%%  %.2f/%.2f GB  %d/%d files%s%s%s' % (
+                pos, j['kind'].upper(), (j.get('phase') or j['state']).upper()[:20], j['pct'] or 0, j['have_mb'] / 1e3,
+                j['want_mb'] / 1e3, j.get('files_done') or 0, j.get('files_total') or 0, sp, left,
+                ('  ' + j['error']) if j.get('error') else ''))
+            print('     %s -> %s%s%s' % (j['src'], j['dst'], ('\n     now: ' + j['current']) if j.get('current') else '',
+                                    ('\n     ' + j['note']) if j.get('note') and j['state'] != 'done' else ''))
+    elif cmd == 'cancel':
+        if not up():
+            sys.exit('monitor did not start')
+        print(http('/control/%s/cancel' % args[0], {}))
     elif cmd in ('pause', 'start', 'restart'):
         if not up():
             sys.exit('monitor did not start')
