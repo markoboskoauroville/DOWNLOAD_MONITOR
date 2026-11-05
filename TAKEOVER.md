@@ -1,5 +1,9 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
+**State 5.11.2026: v4.** Icon like VM REMOTE: DOWNLOAD / MONITOR on the black terminal tile, orange square cursor
+(STAR_SWIFT icons6 `terminal:#FF9F0A`). The branch is `main` (renamed from master 5.11.2026); built by GitHub Actions.
+
+
 1. Python 3.10 at `~/.pyenv/versions/3.10.14/bin/python3` with Flask (`pip install flask`), and
    huggingface_hub for `dlmon.py hf` and repo sizes (`pip install huggingface_hub`).
 2. Clone: `git clone https://github.com/markoboskoauroville/DOWNLOAD_MONITOR ~/Developer/DOWNLOAD_MONITOR`
