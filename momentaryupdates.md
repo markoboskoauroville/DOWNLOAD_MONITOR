@@ -55,3 +55,7 @@ Quit and v3 reopened with `--login`; the server came back on :8833 with its 458 
 "if there is no scripting support, we need to have that. We need to use our Download app to be Download and Copy Move app. Rename it and copy the system of Pathfinder to to show what's moving and the speed and put everything in the queue. We are not moving files multiple at the same time. Everything is in the queue, and in my download copy move application, I can see what's going on. And for engine behind, you choose anything what you like."
 
 **Status:** saved first.
+
+"This app will also have 2 windows, left and right, for copying between 2 locations manually. And it needs to always next to every folder, right, which is now, as you can see, our application Pathfinder doesn't do. Folder size— what is the folder size?"
+
+**Status:** saved first (5.11.2026, evening).
