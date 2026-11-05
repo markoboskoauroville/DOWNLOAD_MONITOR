@@ -46,3 +46,4 @@ Quit and v3 reopened with `--login`; the server came back on :8833 with its 458 
 
 "please style the download monitor mantra icon to look exactly the same as VM remote. Make the text different. Download monitor full, two-line text without abbreviations, and just add an orange dot at the end or better say, square. It's the entry point in the terminal"
 **Status:** saved first.
+**Status (5.11.2026, ~12:40):** v4 built by GitHub (first workflow run), installed, running (page 200). Icon: the VM REMOTE terminal tile, DOWNLOAD / MONITOR, orange square cursor (STAR_SWIFT icons6 symbol terminal:#FF9F0A). The repo's branch renamed master → main (one branch rule).
