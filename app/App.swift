@@ -1,21 +1,24 @@
-// Download Monitor (Mantra): every download on this Mac, each with its own bar, in a native window. Replaces MANTRA_STAR
-// apps/download.lua and the Chrome page (Marko, 13.10.2026: "no more Lua, only Swift"). The server stays: monitor.py at
-// 127.0.0.1:8833 and dlmon.py are what every session calls, so their API is untouched. This window reads GET /progress
-// twice a second and acts through POST /control/<id>/<action> and /forget_many. Opening the app starts the server if it
-// is down, as the star's tick did; quitting the app stops it (POST /quit), as the star's second tick did. A download
-// that dlmon.py started keeps going either way: its worker is in a session of its own.
-// v2 (19.10.2026, Marko: "In the top of every user interface, there will now be an on/off switch ... If I say on, I
-// close it's on" and "please unify the position of the close button on every application. It's far upper right
-// corner. There is X to close the dialog in every dialog, same"): the first row is DOWNLOAD MONITOR  ON  OFF with the ✕
-// at its far right. OFF quits, and the quit stops the server as before; ✕ (or the red button) closes the window only,
-// the app and the server stay ON. The delete question carries the same ✕ (= Cancel). The star only opens it now.
-// v3 (31.10.2026, Marko: "Each needs to have the same user interface elements. On, off and top"): TOP left of the ✕,
-// green = the window stays above every other window (UserDefaults "onTop", applied at launch); OFF, TOP and ✕ are
-// Accessibility buttons (off, top, close: MANTRA_MANIFEST swift-apps.md).
+// Download, Copy and Move (Mantra), once Download Monitor (Mantra): every download on this Mac, and every copy and move,
+// each with its own line, in a native window. The server stays: monitor.py at 127.0.0.1:8833 and dlmon.py are what every
+// session calls, so their API is untouched. This window reads GET /progress twice a second and acts through
+// POST /control/<id>/<action>, /forget_many and /copy. Opening the app starts the server if it is down; quitting the app
+// stops it (POST /quit). A download dlmon.py started and the copy queue (copier.py) keep going either way: each runs in
+// a session of its own, and the server picks them up again when it starts.
+// v2 (19.10.2026): the first row ON  OFF with the ✕ at its far right; the delete question carries the same ✕.
+// v3 (31.10.2026): TOP left of the ✕; OFF, TOP and ✕ are Accessibility buttons (off, top, close).
+// v4 (5.11.2026): the icon like VM REMOTE; built by GitHub Actions.
+// v5 (5.11.2026, Marko: "We need to use our Download app to be Download and Copy Move app. Rename it and copy the system
+// of Pathfinder to show what's moving and the speed and put everything in the queue. We are not moving files multiple
+// at the same time." and "This app will also have 2 windows, left and right, for copying between 2 locations manually
+// ... Folder size— what is the folder size?"): renamed; two panes with folder sizes (Panes.swift); COPY → / MOVE → and
+// back; one queue, one copy or move at a time, each line with from → to, its hairline, DONE, %, SPEED, TIME LEFT,
+// READY AT, FILES, the file in hand, and PAUSE | CANCEL | FOLDER. Every word is a real button (Accessibility), orange
+// under the mouse, red while pressed. The window is resizable and remembers its place.
 import SwiftUI
 import AppKit
 
-let VERSION = 4
+let VERSION = 5
+let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
 let DIR = NSHomeDirectory() + "/Developer/DOWNLOAD_MONITOR"
@@ -25,8 +28,10 @@ let JOBS = NSHomeDirectory() + "/.download_monitor/jobs"
 let GREEN = Color(red: 0x33/255, green: 0xD1/255, blue: 0x7A/255)
 let GREY = Color(red: 0x7A/255, green: 0x80/255, blue: 0x87/255)
 let AMBER = Color(red: 0xE8/255, green: 0xA3/255, blue: 0x3D/255)
+let ORANGE = Color(red: 0xFF/255, green: 0x9F/255, blue: 0x0A/255)
 let INK = Color(red: 0x0B/255, green: 0x0D/255, blue: 0x10/255)
 let RED = Color(red: 0xFF/255, green: 0x5F/255, blue: 0x57/255)
+let BLUE = Color(red: 0x5A/255, green: 0xA0/255, blue: 0xE0/255)
 
 struct Job: Decodable, Identifiable {
     let id: String; let name: String
@@ -34,6 +39,10 @@ struct Job: Decodable, Identifiable {
     let speed_mbs: Double; let eta_s: Int?; let eta_at: String?
     let done: Bool; let state: String; let control: Bool
     let info: String?; let repo: String?; let error: String?
+    // copy and move (v5)
+    let kind: String?; let src: String?; let dst: String?; let phase: String?; let current: String?
+    let files_done: Int?; let files_total: Int?; let queue_pos: Int?; let note: String?
+    var isCopy: Bool { kind == "copy" || kind == "move" }
 }
 struct Progress: Decodable {
     let jobs: [Job]; let total_have_mb: Double; let total_want_mb: Double
@@ -42,7 +51,8 @@ struct Progress: Decodable {
     let disk: Disk?
 }
 
-func mb(_ v: Double) -> String { v >= 1024 ? String(format: "%.2f GB", v / 1024) : String(format: "%.0f MB", v) }
+func mb(_ v: Double) -> String { v >= 1000 ? String(format: "%.2f GB", v / 1000) : String(format: "%.0f MB", v) }
+func hms(_ s: Int) -> String { String(format: "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) }
 
 final class Monitor: ObservableObject {
     @Published var p: Progress?
@@ -58,7 +68,6 @@ final class Monitor: ObservableObject {
     func ensureServer() {
         get("/health") { ok, _ in
             if ok { return }
-            // detached, its output to the server's own log, as download.lua's SPAWN did
             let log = NSHomeDirectory() + "/.download_monitor/monitor.log"
             try? FileManager.default.createDirectory(atPath: NSHomeDirectory() + "/.download_monitor", withIntermediateDirectories: true)
             let sh = Process(); sh.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -71,13 +80,13 @@ final class Monitor: ObservableObject {
         var r = URLRequest(url: URL(string: URLBASE + path)!); r.timeoutInterval = 2
         URLSession.shared.dataTask(with: r) { d, resp, _ in then((resp as? HTTPURLResponse)?.statusCode == 200, d) }.resume()
     }
-    func post(_ path: String, _ body: [String: Any] = [:], then: (() -> Void)? = nil) {
-        var r = URLRequest(url: URL(string: URLBASE + path)!); r.httpMethod = "POST"; r.timeoutInterval = 10
+    func post(_ path: String, _ body: [String: Any] = [:], timeout: TimeInterval = 10, then: (() -> Void)? = nil) {
+        var r = URLRequest(url: URL(string: URLBASE + path)!); r.httpMethod = "POST"; r.timeoutInterval = timeout
         r.setValue("application/json", forHTTPHeaderField: "Content-Type"); r.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: r) { d, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let err = d.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["error"] as? String
-            DispatchQueue.main.async { if code != 200 { self.said = err ?? "the server said \(code)" }; then?(); self.poll() }
+            DispatchQueue.main.async { if code != 200 { self.said = err ?? "the server said \(code)" } else { then?() }; self.poll() }
         }.resume()
     }
     func poll() {
@@ -86,26 +95,50 @@ final class Monitor: ObservableObject {
             DispatchQueue.main.async {
                 self.up = pr != nil
                 if let pr = pr { self.p = pr; if self.said == "starting the server…" { self.said = "" } }
-                self.picked = self.picked.filter { id in self.p?.jobs.contains { $0.id == id } ?? false }
+                let ids = Set(self.p?.jobs.map { $0.id } ?? [])
+                let keep = self.picked.filter { ids.contains($0) }
+                if keep != self.picked { self.picked = keep }
             }
         }
     }
     func control(_ j: Job, _ a: String) { post("/control/\(j.id)/\(a)") }
     func forget(ids: [String]?, ask: String) {
         let al = NSAlert(); al.messageText = "Delete \(ask)?"
-        al.informativeText = "A download still running is stopped first."
+        al.informativeText = "A download still running is stopped first; a copy or move running is paused first (what is copied stays)."
         al.addButton(withTitle: "Delete"); al.addButton(withTitle: "Cancel")
         CloseX.put(on: al)
         guard al.runModal() == .alertFirstButtonReturn else { return }
         post("/forget_many", ids == nil ? ["all": true] : ["ids": ids!]) { self.picked = [] }
     }
     func clearFinished() {
-        let done = p?.jobs.filter { $0.done }.map { $0.id } ?? []
+        let done = p?.jobs.filter { $0.done || $0.state == "cancelled" }.map { $0.id } ?? []
         guard !done.isEmpty else { said = "no finished rows"; return }
         post("/forget_many", ["ids": done]) { self.said = "\(done.count) finished rows cleared" }
     }
-    // the folder: the job's file if it names one, else its Hugging Face cache folder
+    // COPY → / MOVE → and back: the selected items of one pane into the other pane's folder, into the one queue
+    func transfer(_ mode: String, from: Pane, to: Pane) {
+        let items = from.items.filter { from.selection.contains($0.path) }.map { $0.path }
+        guard !items.isEmpty else { said = "select something in the \(from.key) pane first"; return }
+        guard from.path != to.path else { said = "both panes show the same folder"; return }
+        if mode == "move" {
+            let al = NSAlert(); al.messageText = "Move \(items.count == 1 ? (items[0] as NSString).lastPathComponent : "\(items.count) items") to \(to.path)?"
+            al.informativeText = "Copied first; the original is deleted only after the check (count, bytes, MD5 of the five largest files), and a link to the new place stays where it was."
+            al.addButton(withTitle: "Move"); al.addButton(withTitle: "Cancel")
+            CloseX.put(on: al)
+            guard al.runModal() == .alertFirstButtonReturn else { return }
+        }
+        said = "putting \(items.count) in the queue…"
+        post("/copy", ["items": items, "dst_dir": to.path, "mode": mode], timeout: 600) {
+            self.said = "\(mode) of \(items.count) item\(items.count == 1 ? "" : "s") queued into \(to.path)"
+            from.selection = []
+        }
+    }
+    // the folder: a copy's destination, the job's file, else its Hugging Face cache folder
     func reveal(_ j: Job) {
+        if j.isCopy, let d = j.dst {
+            let p = FileManager.default.fileExists(atPath: d) ? d : (d as NSString).deletingLastPathComponent
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]); return
+        }
         let f = JOBS + "/" + j.id.replacingOccurrences(of: "[^A-Za-z0-9_.-]", with: "_", options: .regularExpression) + ".json"
         let job = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: f)))) as? [String: Any] ?? [:]
         if let file = job["file"] as? String, FileManager.default.fileExists(atPath: file) {
@@ -120,7 +153,7 @@ final class Monitor: ObservableObject {
     }
 }
 
-// v2 (19.10.2026): the ✕ in the top-right corner of a dialog, the same as the window's: it answers Cancel
+// the ✕ in the top-right corner of a dialog, the same as the window's: it answers Cancel
 final class CloseX: NSObject {
     static let shared = CloseX()
     static func put(on al: NSAlert) {
@@ -136,11 +169,26 @@ final class CloseX: NSObject {
     @objc func cancel() { NSApp.stopModal(withCode: .alertSecondButtonReturn) }
 }
 
-struct Word: View {
-    let text: String; let on: Bool; let action: () -> Void
+// a word that is a button: grey at rest (green when on), orange under the mouse, red while pressed; a real AX button
+struct WordStyle: ButtonStyle {
+    let on: Bool; let size: CGFloat
+    func makeBody(configuration: Configuration) -> some View { WordFace(label: configuration.label, pressed: configuration.isPressed, on: on, size: size) }
+}
+struct WordFace<L: View>: View {
+    let label: L; let pressed: Bool; let on: Bool; let size: CGFloat
+    @State private var hover = false
     var body: some View {
-        Text(text).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(on ? GREEN : GREY)
-            .padding(.horizontal, 5).padding(.vertical, 3).contentShape(Rectangle()).onTapGesture(perform: action)
+        label.font(.system(size: size, weight: .bold, design: .monospaced))
+            .foregroundColor(pressed ? RED : hover ? ORANGE : on ? GREEN : GREY)
+            .padding(.horizontal, 5).padding(.vertical, 3).contentShape(Rectangle())
+            .onHover { h in hover = h; if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+    }
+}
+struct Word: View {
+    let text: String; let on: Bool; var size: CGFloat = 12; let action: () -> Void
+    init(text: String, on: Bool, size: CGFloat = 12, action: @escaping () -> Void) { self.text = text; self.on = on; self.size = size; self.action = action }
+    var body: some View {
+        Button(action: action) { Text(text).fixedSize() }.buttonStyle(WordStyle(on: on, size: size)).accessibilityLabel(text)
     }
 }
 
@@ -148,34 +196,101 @@ struct TopWord: View {
     @AppStorage("onTop") private var onTop = false
     var body: some View {
         Word(text: "TOP", on: onTop) { onTop.toggle(); TopWord.float(onTop) }
-            .axButton("Top", id: "top", value: onTop ? "on" : "off") { onTop.toggle(); TopWord.float(onTop) }
+            .accessibilityIdentifier("top").accessibilityValue(onTop ? "on" : "off")
             .help("Always on top: green, the window stays above every other window")
             .onAppear { DispatchQueue.main.async { TopWord.float(onTop) } }
     }
     static func float(_ on: Bool) {
-        for w in NSApp.windows where w.title.hasPrefix("Download Monitor") { w.level = on ? .floating : .normal }
-    }
-}
-extension View {
-    func axButton(_ label: String, id: String, value: String? = nil, _ action: @escaping () -> Void) -> some View {
-        accessibilityElement(children: .ignore)
-            .accessibilityLabel(label)
-            .accessibilityIdentifier(id)
-            .accessibilityValue(value ?? "")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction(.default, action)
+        for w in NSApp.windows where w.title.hasPrefix("Download") { w.level = on ? .floating : .normal }
     }
 }
 
-struct Bar: View {
+// a hairline that fills like a progress line (workflow-interface.md: everything is a hairline)
+struct Hair: View {
     let pct: Double; let colour: Color
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).fill(Color(white: 0.16))
-                RoundedRectangle(cornerRadius: 3).fill(colour).frame(width: g.size.width * CGFloat(max(0, min(100, pct))) / 100)
+                Rectangle().fill(Color(white: 0.18))
+                Rectangle().fill(colour).frame(width: g.size.width * CGFloat(max(0, min(100, pct))) / 100)
             }
-        }.frame(height: 8)
+        }.frame(height: 2)
+    }
+}
+struct Line: View { var body: some View { Rectangle().fill(Color(white: 0.2)).frame(height: 1) } }
+
+// one labelled cell: a small grey LABEL, the VALUE under it
+struct Cell: View {
+    let label: String; let value: String; var colour: Color = .white
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
+            Text(value).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundColor(colour).fixedSize()
+        }.frame(minWidth: 90, alignment: .leading)
+    }
+}
+
+struct CopyRow: View {
+    @ObservedObject var m: Monitor
+    let j: Job
+    var colour: Color {
+        switch j.state {
+        case "done": return BLUE
+        case "failed": return RED
+        case "paused", "cancelled": return GREY
+        case "running": return j.phase == "verifying" ? GREEN : AMBER
+        default: return j.phase != nil ? RED : GREY
+        }
+    }
+    var label: String {
+        let pos = j.queue_pos.map { " \($0)" } ?? ""
+        switch j.state {
+        case "running": return (j.phase ?? "running").uppercased()
+        case "queued": return "QUEUED\(pos)" + (j.phase.map { " · " + $0.uppercased() } ?? "")
+        case "paused": return "PAUSED\(pos) · HOLDS THE QUEUE"
+        default: return j.state.uppercased()
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: m.picked.contains(j.id) ? "checkmark.square.fill" : "square").foregroundColor(GREY)
+                    .onTapGesture { if m.picked.contains(j.id) { m.picked.remove(j.id) } else { m.picked.insert(j.id) } }
+                    .accessibilityLabel("Select").accessibilityAddTraits(.isButton)
+                Text((j.kind ?? "copy").uppercased()).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(AMBER).fixedSize()
+                Text(j.name).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(label).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(colour).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("\(j.src ?? "?")  →  \(j.dst ?? "?")").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
+                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            Hair(pct: j.pct ?? 0, colour: colour)
+            HStack(alignment: .top, spacing: 14) {
+                Cell(label: j.phase == "verifying" ? "COPIED" : "DONE", value: "\(mb(j.have_mb)) of \(mb(j.want_mb))")
+                Cell(label: j.phase == "verifying" ? "VERIFIED" : "PERCENT", value: j.pct.map { String(format: "%.1f %%", $0) } ?? "–", colour: AMBER)
+                Cell(label: "SPEED", value: j.speed_mbs > 0 ? String(format: "%.1f MB/s", j.speed_mbs) : "–")
+                Cell(label: "TIME LEFT", value: j.eta_s.map(hms) ?? "–")
+                Cell(label: "READY AT", value: j.eta_at ?? "–", colour: AMBER)
+                Cell(label: "FILES", value: "\(j.files_done ?? 0) / \(j.files_total ?? 0)")
+                Spacer(minLength: 0)
+            }
+            if let c = j.current { Text("now: " + c).font(.system(size: 11, design: .monospaced)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true) }
+            if let e = j.error { Text(e).font(.system(size: 11, design: .monospaced)).foregroundColor(RED).fixedSize(horizontal: false, vertical: true) }
+            if let n = j.note, !n.isEmpty { Text(n).font(.system(size: 11)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true) }
+            HStack(spacing: 2) {
+                Spacer()
+                let stopped = ["paused", "failed", "cancelled"].contains(j.state)
+                Word(text: stopped ? "START" : "PAUSE", on: j.state == "running") {
+                    if j.done { m.said = "\(j.name) is done" } else { m.control(j, stopped ? "start" : "pause") }
+                }.accessibilityIdentifier("pause-\(j.id)")
+                Bar_()
+                Word(text: "CANCEL", on: false) {
+                    if j.done || j.state == "cancelled" { m.said = "nothing to cancel" } else { m.control(j, "cancel") }
+                }.accessibilityIdentifier("cancel-\(j.id)")
+                Bar_()
+                Word(text: "FOLDER", on: false) { m.reveal(j) }
+            }
+        }.padding(.vertical, 8)
     }
 }
 
@@ -185,99 +300,165 @@ struct JobRow: View {
     var colour: Color { j.done ? GREEN : j.error != nil || j.state == "stopped" ? RED : j.state == "paused" ? GREY : AMBER }
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Image(systemName: m.picked.contains(j.id) ? "checkmark.square.fill" : "square").foregroundColor(GREY)
                     .onTapGesture { if m.picked.contains(j.id) { m.picked.remove(j.id) } else { m.picked.insert(j.id) } }
-                Text(j.name).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                    .accessibilityLabel("Select").accessibilityAddTraits(.isButton)
+                Text("DOWNLOAD").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
+                Text(j.name).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                Text(j.done ? "DONE" : j.state.uppercased()).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(colour)
+                Text(j.done ? "DONE" : j.state.uppercased()).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(colour).fixedSize()
             }
-            Bar(pct: j.pct ?? 0, colour: colour)
+            Hair(pct: j.pct ?? 0, colour: colour)
             HStack(spacing: 10) {
-                Text("\(mb(j.have_mb)) of \(j.want_mb > 0 ? mb(j.want_mb) : "?")" + (j.pct.map { String(format: "  %.1f %%", $0) } ?? ""))
-                if !j.done && j.speed_mbs > 0 { Text(String(format: "%.1f Mbit/s", j.speed_mbs * 8)) }
-                if let at = j.eta_at, !j.done { Text("done at \(at)") }
+                Text("\(mb(j.have_mb)) of \(j.want_mb > 0 ? mb(j.want_mb) : "?")" + (j.pct.map { String(format: "  %.1f %%", $0) } ?? "")).fixedSize()
+                if !j.done && j.speed_mbs > 0 { Text(String(format: "%.1f MB/s", j.speed_mbs)).fixedSize() }
+                if let s = j.eta_s, !j.done { Text(hms(s) + " left").fixedSize() }
+                if let at = j.eta_at, !j.done { Text("ready at \(at)").fixedSize() }
                 Spacer()
                 if j.control && !j.done {
-                    if j.state == "running" { Word(text: "PAUSE", on: false) { m.control(j, "pause") } }
-                    else { Word(text: "START", on: false) { m.control(j, "start") } }
+                    Word(text: j.state == "running" ? "PAUSE" : "START", on: false) { m.control(j, j.state == "running" ? "pause" : "start") }
+                    Bar_()
                     Word(text: "RESTART", on: false) { m.control(j, "restart") }
+                    Bar_()
                 }
                 Word(text: "FOLDER", on: false) { m.reveal(j) }
             }.font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
             if let e = j.error { Text(e).font(.system(size: 11, design: .monospaced)).foregroundColor(RED).fixedSize(horizontal: false, vertical: true) }
-            if let i = j.info, !i.isEmpty { Text(i).font(.system(size: 11)).foregroundColor(GREY).lineLimit(2) }
+            if let i = j.info, !i.isEmpty { Text(i).font(.system(size: 11)).foregroundColor(GREY).lineLimit(3).fixedSize(horizontal: false, vertical: true) }
         }.padding(.vertical, 6)
     }
 }
 
+let LEFT = Pane(key: "left", start: NSHomeDirectory())
+let RIGHT = Pane(key: "right", start: FileManager.default.fileExists(atPath: "/Volumes") ? "/Volumes" : NSHomeDirectory())
+
 struct MonitorView: View {
     @ObservedObject var m: Monitor
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // v2 (19.10.2026): ON / OFF first, in the window's own words; the ✕ at the far right closes the window only
-            HStack(spacing: 4) {
-                Text("DOWNLOAD MONITOR").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white).padding(.trailing, 6)
-                Word(text: "ON", on: true) {}.help("The Download Monitor runs")
-                Word(text: "OFF", on: false) { NSApp.terminate(nil) }.help("Quit it; the server at 8833 stops too")
-                    .axButton("Off", id: "off") { DispatchQueue.main.async { NSApp.terminate(nil) } }
+    @ObservedObject var left = LEFT
+    @ObservedObject var right = RIGHT
+
+    var copies: [Job] {
+        let all = m.p?.jobs.filter { $0.isCopy } ?? []
+        let live = all.filter { $0.queue_pos != nil }.sorted { ($0.queue_pos ?? 0) < ($1.queue_pos ?? 0) }
+        return live + all.filter { $0.queue_pos == nil }.reversed()
+    }
+    var downloads: [Job] { (m.p?.jobs.filter { !$0.isCopy } ?? []).reversed() }
+
+    var topRow: some View {
+        HStack(spacing: 2) {
+            Text("DOWNLOAD, COPY AND MOVE").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white).padding(.trailing, 8).fixedSize()
+            Word(text: "ON", on: true) {}.help("Download, Copy and Move runs").accessibilityIdentifier("on")
+            Bar_()
+            Word(text: "OFF", on: false) { DispatchQueue.main.async { NSApp.terminate(nil) } }
+                .help("Quit it; the server at 8833 stops too. A copy or move running goes on (PAUSE stops it)")
+                .accessibilityIdentifier("off")
+            Spacer()
+            Text("v\(VERSION)").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
+                .onTapGesture { NSWorkspace.shared.open(URL(string: RELEASES)!) }
+            TopWord()
+            Button(action: { (NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible })?.performClose(nil) }) {
+                Image(systemName: "xmark").font(.system(size: 15, weight: .medium)).foregroundColor(GREY)
+                    .frame(width: 30, height: 30).contentShape(Rectangle())
+            }.buttonStyle(.plain).help("Close the window (the app stays ON)")
+            .accessibilityLabel("Close window").accessibilityIdentifier("close")
+        }
+    }
+
+    var panes: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PaneView(pane: left, title: "LEFT")
+            VStack(spacing: 10) {
                 Spacer()
-                TopWord()
-                Button(action: { (NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible })?.performClose(nil) }) {
-                    Image(systemName: "xmark").font(.system(size: 15, weight: .medium)).foregroundColor(GREY)
-                        .frame(width: 30, height: 30).contentShape(Rectangle())
-                }.buttonStyle(.plain).help("Close the window (the Download Monitor stays ON)")
-                .accessibilityLabel("Close window").accessibilityIdentifier("close")
-            }.padding(.top, -12).padding(.trailing, -12)
-            HStack {
-                Text("DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY)
+                Word(text: "COPY →", on: false) { m.transfer("copy", from: left, to: right) }.accessibilityIdentifier("copy-right")
+                Word(text: "MOVE →", on: false) { m.transfer("move", from: left, to: right) }.accessibilityIdentifier("move-right")
+                Line().frame(width: 60)
+                Word(text: "← COPY", on: false) { m.transfer("copy", from: right, to: left) }.accessibilityIdentifier("copy-left")
+                Word(text: "← MOVE", on: false) { m.transfer("move", from: right, to: left) }.accessibilityIdentifier("move-left")
+                Spacer()
+            }.frame(width: 92)
+            PaneView(pane: right, title: "RIGHT")
+        }.padding(.vertical, 8)
+    }
+
+    var queue: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("THE QUEUE · ONE COPY OR MOVE AT A TIME").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
                 Spacer()
                 if let p = m.p, m.up {
-                    Text(String(format: "%.1f Mbit/s", p.speed_mbit) + (p.last_eta_at.map { "  ·  all done at \($0)" } ?? ""))
-                        .font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(AMBER)
+                    Text(String(format: "%.1f MB/s", p.speed_mbit / 8) + (p.last_eta_at.map { "  ·  all ready at \($0)" } ?? ""))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(AMBER).fixedSize()
                 } else {
                     Text("SERVER DOWN").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(RED)
                 }
             }
             if let p = m.p, m.up {
-                HStack {
-                    Text("\(p.jobs.count) rows · \(mb(p.total_have_mb)) of \(mb(p.total_want_mb))" + (p.disk?.free_gb.map { String(format: " · %.0f GB free", $0) } ?? ""))
-                        .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
+                HStack(spacing: 2) {
+                    Text("\(p.jobs.count) rows" + (p.disk?.free_gb.map { String(format: " · %.0f GB free here", $0) } ?? ""))
+                        .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize()
                     Spacer()
                     Word(text: m.picked.count == p.jobs.count && !p.jobs.isEmpty ? "SELECT NONE" : "SELECT ALL", on: false) {
                         if m.picked.count == p.jobs.count { m.picked = [] } else { m.picked = Set(p.jobs.map { $0.id }) }
                     }
-                    Word(text: "DELETE SELECTED (\(m.picked.count))", on: false) { if !m.picked.isEmpty { m.forget(ids: Array(m.picked), ask: "\(m.picked.count) rows") } }
+                    Bar_()
+                    Word(text: "DELETE SELECTED (\(m.picked.count))", on: false) {
+                        if m.picked.isEmpty { m.said = "nothing selected" } else { m.forget(ids: Array(m.picked), ask: "\(m.picked.count) rows") }
+                    }
+                    Bar_()
                     Word(text: "CLEAR FINISHED", on: false) { m.clearFinished() }
                 }
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(p.jobs.reversed()) { j in JobRow(m: m, j: j); Divider() }
-                        if p.jobs.isEmpty { Text("Nothing is downloading.").font(.system(size: 12)).foregroundColor(GREY).padding(.top, 20) }
-                    }
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(copies) { j in CopyRow(m: m, j: j); Line() }
+                        if copies.isEmpty {
+                            Text("Nothing in the queue. Select in one pane, then COPY → or MOVE →; or dlmon.py copy / move from any session.")
+                                .font(.system(size: 12)).foregroundColor(GREY).padding(.vertical, 10).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !downloads.isEmpty {
+                            Text("DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.top, 14)
+                            ForEach(downloads) { j in JobRow(m: m, j: j); Line() }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 Text("The server at 127.0.0.1:8833 does not answer.").font(.system(size: 12)).foregroundColor(GREY)
                 Word(text: "START THE SERVER", on: false) { m.ensureServer() }
                 Spacer()
             }
-            if !m.said.isEmpty { Text(m.said).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY) }
+        }.padding(.top, 8)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            topRow.padding(.top, -10).padding(.trailing, -10)
+            Line().padding(.top, 4)
+            VSplitView {
+                panes.frame(minHeight: 240, idealHeight: 380)
+                queue.frame(minHeight: 220, idealHeight: 400)
+            }
+            Line()
             HStack {
-                Text("dlmon.py add / hf from any session puts a row here").font(.system(size: 10, design: .monospaced)).foregroundColor(GREY)
+                Text(m.said.isEmpty ? "dlmon.py copy / move / add / hf from any session puts a line here" : m.said)
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                Text("v\(VERSION)").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).onTapGesture { NSWorkspace.shared.open(URL(string: RELEASES)!) }
+            }.padding(.top, 6)
+        }
+        .padding(16)
+        .frame(minWidth: 980, idealWidth: 1240, maxWidth: .infinity, minHeight: 640, idealHeight: 900, maxHeight: .infinity)
+        .background(INK).preferredColorScheme(.dark)
+        .onAppear {
+            DispatchQueue.main.async {
+                for w in NSApp.windows where w.title.hasPrefix("Download") { w.setFrameAutosaveName("DownloadCopyMoveMain") }
             }
         }
-        .padding(20).frame(width: 640, height: 560).background(INK).preferredColorScheme(.dark)
     }
 }
 
 let MONITOR = Monitor()
 
-// quitting the app is the star's second tick: the server stops too (download.lua's stop); workers keep going
 final class Delegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
-    // v2 (19.10.2026): the reopen (the star's row, the Dock) brings the window back, or lets the WindowGroup make a new one
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
         let ws = s.windows.filter { $0.isMiniaturized || $0.isVisible }
         if ws.isEmpty { return true }
@@ -293,9 +474,11 @@ final class Delegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@main struct DownloadMonitor: App {
+@main struct DownloadCopyMove: App {
     @NSApplicationDelegateAdaptor(Delegate.self) var delegate
     var body: some Scene {
-        WindowGroup("Download Monitor (Mantra)") { MonitorView(m: MONITOR) }.windowResizability(.contentSize)
+        WindowGroup(APPNAME) { MonitorView(m: MONITOR) }
+            .windowResizability(.contentMinSize)
+            .defaultSize(width: 1240, height: 900)
     }
 }

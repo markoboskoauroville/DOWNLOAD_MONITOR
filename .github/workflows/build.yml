@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 env:
-  APP: "Download Monitor (Mantra)"
+  APP: "Download, Copy and Move (Mantra)"
   VERSION_FILE: app/App.swift
 jobs:
   build:

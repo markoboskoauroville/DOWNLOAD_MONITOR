@@ -1,14 +1,19 @@
 #!/bin/sh
-# build.sh: Download Monitor (Mantra).app, swiftc straight, no Xcode, signed "Mantra Apps"
-# (MANTRA_MANIFEST mac-app-signing.md, swift-apps.md). The version is the one number in app/App.swift.
+# build.sh: Download, Copy and Move (Mantra).app (once Download Monitor (Mantra)), swiftc straight, no Xcode, signed
+# "Mantra Apps" (MANTRA_MANIFEST mac-app-signing.md, swift-apps.md). The version is the one number in app/App.swift.
+# Run ONLY by the GitHub workflow (.github/workflows/build.yml), never on the Mac (Marko, 5.11.2026: compiled only by GitHub).
 set -e
 cd "$(dirname "$0")"
 V=$(sed -n 's/^let VERSION = \([0-9]*\)/\1/p' app/App.swift)
-NAME="Download Monitor (Mantra)"
+NAME="Download, Copy and Move (Mantra)"
 APP="build/$NAME.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O -swift-version 5 -parse-as-library -o "$APP/Contents/MacOS/DownloadMonitor" app/*.swift
-# the icon carries the version (version-visible.md): drawn again at every build
+swiftc -O -swift-version 5 -parse-as-library -o "$APP/Contents/MacOS/DownloadCopyMove" app/*.swift
+# the icon: six-letter house style (STAR_SWIFT icons6), DOWNLOAD / COPY MOVE on the black terminal, orange cursor,
+# drawn here from icon/six.json; if that fails the last six_1024.png in the repo is used
+if swift icon/six_icon.swift icon/six.json build/six download >/dev/null 2>&1 && [ -f build/six/download/icon_1024.png ]; then
+  cp build/six/download/icon_1024.png icon/six_1024.png
+fi
 (cd icon && swift make_icon.swift "$V" >/dev/null)
 I=build/AppIcon.iconset; rm -rf $I; mkdir -p $I
 for s in 16 32 128 256 512; do
@@ -24,7 +29,7 @@ cat > "$APP/Contents/Info.plist" <<PL
 <key>CFBundleDisplayName</key><string>$NAME</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleIdentifier</key><string>community.auroville.downloadmonitor</string>
-<key>CFBundleExecutable</key><string>DownloadMonitor</string>
+<key>CFBundleExecutable</key><string>DownloadCopyMove</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$V</string>
 <key>CFBundleVersion</key><string>$V</string>
