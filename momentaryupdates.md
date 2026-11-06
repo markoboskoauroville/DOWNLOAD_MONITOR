@@ -66,3 +66,9 @@ Engine copier.py: one at a time, resumable, a move verified (count, bytes, MD5 o
 goes, symlink left; a drive not connected waits. Started: SantoshiKoncert (360 GB of files) then five folders to
 /Volumes/Video_Marko/From MacBook (MANTRA_MANIFEST file-moves.md). Checked by a capture of the window. Marko to try the
 panes and the buttons.
+
+## 6.11.2026: a file viewer with many panes, Quick Look, controlled from Python
+
+"now there is a chance to update my application downloader copier to also be a file viewer, and the same command can be executed inside my application. You're going to close Pathfinder. Update my application, download that and copier, and it can open any number of folders at the same time, creating many vertical windows. Now, for this case, only two, and I can double-click any file, and it will open up in its viewer now you can create this code so you can through the Python API control it. Open any folder and list the folders I need to watch with multiple views: icon view and list view. If I'm in icon view, I have a slider at the top to enlarge icons, or a list view with all details. Please update it so in the future it's easy for me and for you to show me the folders I need to check, and then I'll check everything and let you know what's going on please also use the previewer mechanism from the Mac's itself. There will be a preview mode. A preview mode means that when I click on one file, the preview will open in full screen. When it's finished, I just press the down arrow or up arrow to go through the three files, and it should play those files. Then I press Escape, and the preview window will exit. That's exactly the same preview window in Finder, which is activated with the spacebar"
+
+**Status:** saved first (6.11.2026). Path Finder closed.
