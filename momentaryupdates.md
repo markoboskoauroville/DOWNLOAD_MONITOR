@@ -95,3 +95,10 @@ only its files) and gives everything back when pressed again; every choice is re
 show|hide <part>`, `view layout bare|full`, `view parts`. Checked by window captures: full, bare bone, and TOOLBAR /
 PATH / QUEUE off. Left in FULL with HIR_96 (left) and HIR_98 (right) in LIST. Marko to try the words by hand.
 
+
+
+## 6.11.2026: every media detail of every file, from MediaInfo, in the list view
+
+"let's continue. Update our app. Download, copy, move Because this is mostly used for media work, I need all media details. Find the repository media info and let it read all possible media info inside the file. In list view, I can see all this info for each file."
+
+**Status:** saved first (6.11.2026).
