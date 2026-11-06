@@ -33,11 +33,11 @@ let DATEFMT: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d.M.yyyy
 // parentheses, the speed of writing". A file whose size grows from one second to the next is live: its line shows the
 // size now, the exact bytes, and (speed). Three quiet seconds and it is a plain file again.
 struct Live: Hashable {
-    var size: Int64; var speed: Double
+    var size: Int64; var speed: Double; var held = false      // held: another program has it open for writing (v22)
     var text: String {
         let f = NumberFormatter(); f.numberStyle = .decimal; f.groupingSeparator = ","
         let exact = f.string(from: NSNumber(value: size)) ?? "\(size)"
-        return "\(bytes(size)) · \(exact) bytes (\(speed > 0 ? bytes(Int64(speed)) + "/s" : "0 B/s"))"
+        return "\(held ? "writing · " : "")\(bytes(size)) · \(exact) bytes (\(speed > 0 ? bytes(Int64(speed)) + "/s" : "0 B/s"))"
     }
 }
 
@@ -122,6 +122,9 @@ final class Pane: ObservableObject, Identifiable {
     private var last: [String: (Int64, Date)] = [:]
     private var quiet: [String: Int] = [:]
     private var liveTimer: Timer?
+    private var openW = Set<String>()                      // v22: files another program has open for writing (lsof)
+    private var lsofBusy = false
+    private var ticks = 0
     @Published var mode: String { didSet { UserDefaults.standard.set(mode, forKey: "pane.\(index).mode") } }
     @Published var iconSize: Double { didSet { UserDefaults.standard.set(iconSize, forKey: "pane.\(index).icon") } }
     @Published var preview: Bool { didSet { UserDefaults.standard.set(preview, forKey: "pane.\(index).preview") } }
@@ -154,8 +157,33 @@ final class Pane: ObservableObject, Identifiable {
     }
     deinit { timer?.invalidate(); liveTimer?.invalidate(); source?.cancel() }
 
+    // lsof of this one folder (not recursive, a few milliseconds): the files another program has open for writing
+    private func scanOpen() {
+        if lsofBusy { return }
+        lsofBusy = true; let dir = path
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+            p.arguments = ["-F", "fan", "+d", dir]
+            let o = Pipe(); p.standardOutput = o; p.standardError = FileHandle.nullDevice
+            var found = Set<String>()
+            if (try? p.run()) != nil {
+                let d = o.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+                var acc = "", name = ""
+                func commit() { if (acc == "w" || acc == "u") && !name.isEmpty { found.insert(name) }; acc = ""; name = "" }
+                for line in (String(data: d, encoding: .utf8) ?? "").split(separator: "\n") {
+                    guard let k = line.first else { continue }
+                    let v = String(line.dropFirst())
+                    if k == "f" || k == "p" { commit() } else if k == "a" { acc = v } else if k == "n" { name = v }
+                }
+                commit()
+            }
+            DispatchQueue.main.async { self?.openW = found; self?.lsofBusy = false }
+        }
+    }
+
     func tick() {
         let now = Date(); var nl = live; var finished = false
+        ticks += 1; if ticks % 3 == 1 { scanOpen() }
         let files = items.filter { !$0.isDir && !$0.isLink }.prefix(3000)
         for i in files {
             guard let a = try? FileManager.default.attributesOfItem(atPath: i.path),
@@ -165,10 +193,15 @@ final class Pane: ObservableObject, Identifiable {
                 let dt = max(0.2, now.timeIntervalSince(p.1))
                 nl[i.path] = Live(size: n, speed: max(0, Double(n - p.0) / dt))
                 last[i.path] = (n, now); quiet[i.path] = 0
+            } else if openW.contains(i.path) {
+                nl[i.path] = Live(size: n, speed: 0, held: true); quiet[i.path] = 0
             } else if nl[i.path] != nil {
                 let q = (quiet[i.path] ?? 0) + 1; quiet[i.path] = q
                 if q >= 3 { nl[i.path] = nil; finished = true } else { nl[i.path] = Live(size: n, speed: 0) }
             }
+            if openW.contains(i.path) { nl[i.path]?.held = true }
+            else if nl[i.path]?.held == true { nl[i.path]?.held = false }
+            if openW.contains(i.path), nl[i.path] == nil { nl[i.path] = Live(size: n, speed: 0, held: true) }
         }
         let here = Set(files.map { $0.path })
         for k in last.keys where !here.contains(k) { last[k] = nil; quiet[k] = nil; nl[k] = nil }
@@ -558,7 +591,7 @@ struct LCol {
     let key: String; let title: String; let right: Bool; let text: (Row) -> String
 }
 let LCOLS: [LCol] = [
-    LCol(key: "duration", title: "TIME", right: true) { r in r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…" },
+    LCol(key: "duration", title: "TIME", right: true) { r in r.live?.held == true && r.duration <= 0 ? "writing" : r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…" },
     LCol(key: "res", title: "RES", right: true) { $0.media?.res ?? "" },
     LCol(key: "fps", title: "FPS", right: true) { $0.media?.fpsText ?? "" },
     LCol(key: "rate", title: "BIT RATE", right: true) { $0.media?.rateText ?? "" },
