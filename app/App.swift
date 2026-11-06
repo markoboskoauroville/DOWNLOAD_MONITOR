@@ -29,7 +29,7 @@
 import SwiftUI
 import AppKit
 
-let VERSION = 12
+let VERSION = 13
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
@@ -432,10 +432,15 @@ struct MonitorView: View {
         let a = panes.active + 1
         return VStack(alignment: .leading, spacing: 6) {
             if dash.shown("toolbar") { toolbar(a) }
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(panes.list) { p in
-                    if p.index > 0 { Rectangle().fill(Color(white: 0.2)).frame(width: 1).padding(.horizontal, 4) }
-                    PaneView(pane: p).frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { g in
+                let n = panes.list.count
+                let room = max(1, g.size.width - 9 * CGFloat(max(0, n - 1)))
+                let w = panes.weights()
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(panes.list) { p in
+                        if p.index > 0 { PaneDivider(left: p.index - 1, room: room) }
+                        PaneView(pane: p).frame(width: room * CGFloat(w[p.index]), height: g.size.height)
+                    }
                 }
             }
         }.padding(.vertical, 8)

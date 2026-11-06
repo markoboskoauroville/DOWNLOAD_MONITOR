@@ -131,3 +131,13 @@ VIEWS) and by a window capture (SOLO VIEWS). Marko to try it by hand.
 "one more modification: next to the name in the panes where we list the files, add a text box. The text box is a simple filter. Whatever is in the text box in the pane just shows that file with the same pattern. That's easy"
 
 **Status:** saved first (6.11.2026).
+**Status (6.11.2026, ~03:55):** v12 built (run 42152857156 green, Latest), installed: the FILTER box sits next to NAME in
+LIST (and above the grid in ICONS); every word typed must be in the name, any case, `*` and `?` allowed, Escape or ✕
+clears, not remembered; `dlmon.py view filter [words] [--pane N]`; checked from Python (9x16 shows 4 of 8).
+
+## 6.11.2026: the line between panes can be dragged
+
+"for the line between panes, please let me drag it left, right, whatever is needed"
+
+**Status:** v13 (Panes.share, PaneDivider in Panes.swift): grab the line, drag left or right, the two panes beside it give
+and take width (each keeps 200 pt), remembered; double click shares equally again; `dlmon.py view share 30 70`.

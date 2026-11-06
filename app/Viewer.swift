@@ -211,6 +211,11 @@ enum ViewCommands {
             let t = c["text"] as? String ?? ""
             ps.pick(n).forEach { $0.filter = t }
             return t.isEmpty ? "filter cleared" : "filter \"\(t)\": " + ps.pick(n).map { "pane \($0.index + 1) shows \($0.rows.count)" }.joined(separator: ", ")
+        case "share":
+            // pane widths in percent (dlmon.py view share 30 70); none = equal
+            let w = (c["widths"] as? [Double]) ?? []
+            if w.count == ps.list.count && w.allSatisfy({ $0 > 0 }) { ps.setShare(w) } else { ps.equalShare() }
+            return "widths " + ps.weights().map { String(format: "%.0f%%", $0 * 100) }.joined(separator: " | ")
         case "front":
             front(); return "in front"
         case "show", "hide":

@@ -319,10 +319,23 @@ final class Panes: ObservableObject {
         list = (paths.isEmpty ? [NSHomeDirectory(), "/Volumes"] : paths).enumerated().map { Pane(index: $0.offset, start: $0.element) }
     }
     func save() { UserDefaults.standard.set(list.map { $0.path }, forKey: "panes.paths") }
+    // v12 (Marko 6.11.2026: "for the line between panes, please let me drag it left, right, whatever is needed"): the
+    // share of the width each pane has (adds up to 1), set by dragging the line between two panes, remembered; a double
+    // click on a line shares the width equally again. A pane added or taken away starts equal again.
+    @Published var share: [Double] = UserDefaults.standard.array(forKey: "panes.share") as? [Double] ?? []
+    func weights() -> [Double] {
+        let n = list.count
+        guard share.count == n, share.allSatisfy({ $0 > 0 }) else { return Array(repeating: 1.0 / Double(max(n, 1)), count: n) }
+        let t = share.reduce(0, +)
+        return share.map { $0 / t }
+    }
+    func setShare(_ w: [Double]) { share = w; UserDefaults.standard.set(w, forKey: "panes.share") }
+    func equalShare() { share = []; UserDefaults.standard.removeObject(forKey: "panes.share") }
     // the panes become these folders, one column each (dlmon.py view open)
     func open(_ folders: [String]) {
         guard !folders.isEmpty else { return }
         if QL.shared.visible { QL.shared.close() }
+        if folders.count != list.count { equalShare() }
         list = folders.enumerated().map { Pane(index: $0.offset, start: $0.element) }
         active = 0
         save()
@@ -330,12 +343,14 @@ final class Panes: ObservableObject {
     func add(_ folder: String? = nil) {
         let start = folder ?? (list.indices.contains(active) ? list[active].path : NSHomeDirectory())
         list.append(Pane(index: list.count, start: start))
+        equalShare()
         save()
     }
     func removeLast() {
         guard list.count > 1 else { return }
         if QL.shared.pane === list.last { QL.shared.close() }
         list.removeLast()
+        equalShare()
         active = min(active, list.count - 1)
         save()
     }
@@ -671,4 +686,37 @@ struct IconCell: View {
 // the grey pipe between neighbouring action words (swift-apps.md, "Buttons light under the mouse")
 struct Bar_: View {
     var body: some View { Text("|").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY.opacity(0.6)).accessibilityHidden(true) }
+}
+
+// the line between two panes: grab it and drag left or right; the two panes beside it give and take width (each keeps
+// at least 200 pt); a double click shares the width equally again
+struct PaneDivider: View {
+    let left: Int; let room: CGFloat
+    @ObservedObject var panes = Panes.shared
+    @State private var start: [Double]?
+    @State private var hover = false
+    var body: some View {
+        Rectangle().fill(Color.clear).frame(width: 9)
+            .overlay(Rectangle().fill(hover || start != nil ? ORANGE : Color(white: 0.2)).frame(width: hover || start != nil ? 3 : 1))
+            .contentShape(Rectangle())
+            .onHover { h in
+                hover = h
+                if h { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { v in
+                    if start == nil { start = panes.weights() }
+                    guard var w = start, left + 1 < w.count else { return }
+                    let sum = w[left] + w[left + 1]
+                    let minF = min(Double(200 / room), sum / 2)
+                    let l = max(minF, min(sum - minF, w[left] + Double(v.translation.width / room)))
+                    w[left] = l; w[left + 1] = sum - l
+                    panes.setShare(w)
+                }
+                .onEnded { _ in start = nil })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { panes.equalShare() })
+            .accessibilityElement(children: .ignore).accessibilityLabel("Divider \(left + 1)")
+            .accessibilityIdentifier("divider-\(left + 1)")
+            .help("Drag to make the panes wider or narrower; double click shares the width equally")
+    }
 }
