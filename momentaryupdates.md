@@ -198,3 +198,9 @@ The title bar is gone: the paths of all panes sit in the title row, each cut at 
 **Status:** saved first (6.11.2026). Plan: a file that is still growing in a pane shows its name with the live size and, in parentheses, the write speed (bytes per second), updated in real time, until it stops growing; then the plain name again.
 **Status (6.11.2026):** v21 written (Panes.swift: a 1-second tick per pane finds files that grow; the line shows `name   size · exact bytes (speed/s)` in amber, in LIST and ICONS; three quiet seconds and the plain name returns). Pushed; GitHub compiles it, then installed and tested with a growing test file.
 **Status (6.11.2026, ~05:50):** DONE v21, GitHub run 42164592345 green, Latest, installed and signed. Proven with a test file growing at 25 MB/s: the left pane showed `growing_test_file.bin 150.0 MB · 150,000,000 bytes (24.7 MB/s)` in amber; after it stopped, the plain name and `625.0 MB`. Marko to try on a real download/copy.
+
+## 6.11.2026: a file DaVinci is rendering shows no numbers
+
+"look, my DaVinci is rendering files, and now in that application there are files coming that have no number in front. What is this fixer"
+
+**Status:** saved first (6.11.2026). Found: DaVinci holds V5-HIR_96_..._B_4x5.mp4 open for writing at 819,239 bytes, not growing for minutes (multi-pass analysis), so MediaInfo cannot read it and TIME, RES, FPS stay empty, and v21's live line did not show because the size did not change. Plan (v22): a file another process has open for writing is shown as WRITING (amber, size, bytes, speed 0) with WRITING in the TIME column, until it is closed; then its numbers are read.
