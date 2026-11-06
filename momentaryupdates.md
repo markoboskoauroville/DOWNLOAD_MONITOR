@@ -124,3 +124,10 @@ DASHBOARD word: first press hides its part, second press SOLOs it (the word read
 TOOLBAR/STATUS keep the panes under them), third press brings everything back as it was. No BARE button: SOLO PANES is
 it. `dlmon.py view solo <part>|off` and `view press <part>`. Checked from Python (hide -> solo -> back for PATH, QUEUE,
 VIEWS) and by a window capture (SOLO VIEWS). Marko to try it by hand.
+
+
+## 6.11.2026: a filter text box next to NAME in every pane
+
+"one more modification: next to the name in the panes where we list the files, add a text box. The text box is a simple filter. Whatever is in the text box in the pane just shows that file with the same pattern. That's easy"
+
+**Status:** saved first (6.11.2026).
