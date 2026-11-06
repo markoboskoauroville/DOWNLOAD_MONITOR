@@ -29,7 +29,7 @@
 import SwiftUI
 import AppKit
 
-let VERSION = 17
+let VERSION = 18
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
@@ -575,7 +575,11 @@ let MONITOR = Monitor()
 
 final class Delegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
-    func applicationDidFinishLaunching(_ n: Notification) { Keys.install() }
+    func applicationDidFinishLaunching(_ n: Notification) {
+        Keys.install()
+        for t in [0.3, 0.8, 1.5, 3.0] { DispatchQueue.main.asyncAfter(deadline: .now() + t) { _ = StatusBar.installAll() } }
+    }
+    func applicationDidBecomeActive(_ n: Notification) { _ = StatusBar.installAll() }
     // the ✕ only hides the window, so the Dock, the star and dlmon.py view bring the same one back
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
         let ws = s.windows.filter { isMainWindow($0) && !($0 is NSPanel) }

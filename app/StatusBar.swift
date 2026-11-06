@@ -61,6 +61,13 @@ enum StatusBar {
     static func buttons(_ w: NSWindow, hidden: Bool) {
         for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { w.standardWindowButton(b)?.isHidden = hidden }
     }
+    // every main window gets the bare look; run at launch (a few times, the window may not be there yet), on every
+    // view command and when the app comes forward
+    static func installAll() -> String {
+        var n = 0
+        for w in NSApp.windows where isMainWindow(w) { install(on: w); n += 1 }
+        return "\(n) window\(n == 1 ? "" : "s") bare"
+    }
     static func install(on w: NSWindow) {
         w.styleMask.insert(.fullSizeContentView)
         w.titlebarAppearsTransparent = true

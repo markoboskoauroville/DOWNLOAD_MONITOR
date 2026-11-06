@@ -259,7 +259,7 @@ enum ViewCommands {
             else if !keys.isEmpty { pr.set(keys) }
             return "columns: " + pr.visible().map { $0.key }.joined(separator: " ")
         case "front":
-            front(); return "in front"
+            front(); return "in front, " + StatusBar.installAll()
         case "show", "hide":
             let name = c["part"] as? String ?? ""
             let on = c["action"] as? String == "show"
