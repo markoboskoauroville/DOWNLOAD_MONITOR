@@ -28,6 +28,19 @@ func duration(_ s: Double) -> String {
 }
 let DATEFMT: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d.M.yyyy HH:mm"; return f }()
 
+// v21 (6.11.2026), Marko: "while the file is written on the disk, until it's finished ... the file name needs to be updated
+// ... in real time showing me how many bytes are coming and what the size of the file is at the moment, and also in
+// parentheses, the speed of writing". A file whose size grows from one second to the next is live: its line shows the
+// size now, the exact bytes, and (speed). Three quiet seconds and it is a plain file again.
+struct Live: Hashable {
+    var size: Int64; var speed: Double
+    var text: String {
+        let f = NumberFormatter(); f.numberStyle = .decimal; f.groupingSeparator = ","
+        let exact = f.string(from: NSNumber(value: size)) ?? "\(size)"
+        return "\(bytes(size)) · \(exact) bytes (\(speed > 0 ? bytes(Int64(speed)) + "/s" : "0 B/s"))"
+    }
+}
+
 struct Item: Identifiable, Hashable {
     let path: String; let name: String; let isDir: Bool; let isLink: Bool; let size: Int64; let mtime: Date
     let kind: String; let isMedia: Bool
@@ -39,7 +52,9 @@ struct Row: Identifiable, Hashable {
     let path: String; let name: String; let isDir: Bool; let isLink: Bool
     let size: Int64; let kind: String; let mtime: Date; let duration: Double
     var media: MediaFacts? = nil
+    var live: Live? = nil
     var id: String { path }
+    var shownName: String { live.map { name + "   " + $0.text } ?? name }
     var pixels: Int { (media?.width ?? 0) * (media?.height ?? 0) }
     var sizeText: String { isLink ? "link" : size < 0 ? "…" : bytes(size) }
 }
@@ -103,6 +118,10 @@ final class Pane: ObservableObject, Identifiable {
     @Published var showHidden = false
     @Published var filter = ""                              // v11: the box next to NAME; not remembered
     @Published var free = ""
+    @Published var live: [String: Live] = [:]              // v21: files growing right now
+    private var last: [String: (Int64, Date)] = [:]
+    private var quiet: [String: Int] = [:]
+    private var liveTimer: Timer?
     @Published var mode: String { didSet { UserDefaults.standard.set(mode, forKey: "pane.\(index).mode") } }
     @Published var iconSize: Double { didSet { UserDefaults.standard.set(iconSize, forKey: "pane.\(index).icon") } }
     @Published var preview: Bool { didSet { UserDefaults.standard.set(preview, forKey: "pane.\(index).preview") } }
@@ -128,8 +147,34 @@ final class Pane: ObservableObject, Identifiable {
         load()
         // the sizes are measured again while the pane is open (a copy filling a folder, a file added deep inside)
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.load() }
+        // every second: which files are growing (common run loop mode, so it also runs while a list is scrolled)
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(t, forMode: .common)
+        liveTimer = t
     }
-    deinit { timer?.invalidate(); source?.cancel() }
+    deinit { timer?.invalidate(); liveTimer?.invalidate(); source?.cancel() }
+
+    func tick() {
+        let now = Date(); var nl = live; var finished = false
+        let files = items.filter { !$0.isDir && !$0.isLink }.prefix(3000)
+        for i in files {
+            guard let a = try? FileManager.default.attributesOfItem(atPath: i.path),
+                  let n = (a[.size] as? NSNumber)?.int64Value else { continue }
+            guard let p = last[i.path] else { last[i.path] = (n, now); continue }
+            if n != p.0 {
+                let dt = max(0.2, now.timeIntervalSince(p.1))
+                nl[i.path] = Live(size: n, speed: max(0, Double(n - p.0) / dt))
+                last[i.path] = (n, now); quiet[i.path] = 0
+            } else if nl[i.path] != nil {
+                let q = (quiet[i.path] ?? 0) + 1; quiet[i.path] = q
+                if q >= 3 { nl[i.path] = nil; finished = true } else { nl[i.path] = Live(size: n, speed: 0) }
+            }
+        }
+        let here = Set(files.map { $0.path })
+        for k in last.keys where !here.contains(k) { last[k] = nil; quiet[k] = nil; nl[k] = nil }
+        if nl != live { live = nl }
+        if finished { load() }
+    }
 
     func go(_ p: String, remember: Bool = true) {
         guard p != path else { load(); return }
@@ -232,9 +277,10 @@ final class Pane: ObservableObject, Identifiable {
             // the duration from MediaInfo; a picture has none; while it is read, "…"
             let dur: Double = !i.isMedia ? -1 : Media.binary == nil ? durs.of(i.path, i.mtime)
                 : f.map { $0.duration > 0 ? $0.duration : -1 } ?? 0
+            let lv = i.isDir ? nil : live[i.path]
             return Row(path: i.path, name: i.name, isDir: i.isDir, isLink: i.isLink,
-                       size: i.isLink ? 0 : i.isDir ? (sizes[i.path] ?? -1) : i.size, kind: i.kind, mtime: i.mtime,
-                       duration: dur, media: f)
+                       size: i.isLink ? 0 : i.isDir ? (sizes[i.path] ?? -1) : lv?.size ?? i.size, kind: i.kind, mtime: i.mtime,
+                       duration: dur, media: f, live: lv)
         }
         let words = filter.lowercased().split(separator: " ").map(String.init)
         if !words.isEmpty { r = r.filter { Pane.matches($0.name, words) } }
@@ -304,6 +350,7 @@ final class Pane: ObservableObject, Identifiable {
     func state() -> [String: Any] {
         ["pane": index + 1, "path": path, "mode": mode, "icon_size": Int(iconSize), "preview": preview,
          "sort": sortKey + (ascending ? " up" : " down"),
+         "live": live.map { ["path": $0.key, "size": $0.value.size, "speed": Int($0.value.speed)] },
          "items": items.count, "shown": rows.count, "filter": filter, "selected": rows.filter { selection.contains($0.path) }.map { $0.path }]
     }
 }
@@ -579,7 +626,7 @@ struct ListView: View {
     }
     // each column as wide as its longest value or its title (with room for ▲); a column empty for every line goes
     func widths() -> (CGFloat, [(LCol, CGFloat)]) {
-        let nameW = min(900, max(230, rows.map { textWidth($0.name, NSFont.systemFont(ofSize: 13)) }.max() ?? 0) + 30)
+        let nameW = min(900, max(230, rows.map { textWidth($0.shownName, NSFont.systemFont(ofSize: 13)) }.max() ?? 0) + 30)
         var out: [(LCol, CGFloat)] = []
         for c in prefs.visible() {
             let vals = rows.map { c.text($0) }
@@ -625,6 +672,9 @@ struct ListRow: View {
             HStack(spacing: 6) {
                 Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
                 Text(r.name).font(.system(size: 13)).foregroundColor(.white).lineLimit(1).fixedSize()
+                if let lv = r.live {
+                    Text(lv.text).font(.system(size: 13).monospacedDigit()).foregroundColor(AMBER).lineLimit(1).fixedSize()
+                }
             }.frame(width: nameW, alignment: .leading)
             ForEach(cols, id: \.0.key) { c, w in
                 Text(c.text(r)).font(.system(size: 12, design: .monospaced))
@@ -697,6 +747,10 @@ struct IconCell: View {
                 .frame(width: size, height: size)
             Text(r.name).font(.system(size: 11)).foregroundColor(.white).multilineTextAlignment(.center)
                 .frame(maxWidth: size + 8).fixedSize(horizontal: false, vertical: true)
+            if let lv = r.live {
+                Text(lv.text).font(.system(size: 10, design: .monospaced)).foregroundColor(AMBER)
+                    .multilineTextAlignment(.center).frame(maxWidth: size + 8).fixedSize(horizontal: false, vertical: true)
+            }
             Text(r.isDir ? r.sizeText : r.duration > 0 ? "\(r.sizeText) · \(duration(r.duration))" : r.sizeText)
                 .font(.system(size: 10, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY).fixedSize()
         }
