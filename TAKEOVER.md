@@ -1,5 +1,7 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
+**v21 (6.11.2026, ~05:50): live size and write speed.** `app/Panes.swift`: `Live` (size, speed, text), `Pane.live` + a 1 s tick (common run loop mode) that stats every file of the folder, a growing file is live, three unchanged ticks end it and reload; Row.live/shownName, ListRow and IconCell draw it in AMBER; `state()` carries `live`. GitHub run 42164592345 green, v21 Latest, installed, signed, proven with a 25 MB/s test file (window capture: `150.0 MB · 150,000,000 bytes (24.7 MB/s)`, plain name after it stopped). Marko to try it on a real download or copy.
+
 **v11 (6.11.2026, ~04:15): DASHBOARD solo.** First press hides a part, second solos it, third brings everything back; run 42152482750 green, installed and signed "Mantra Apps", checked by `dlmon.py view press` and a window capture. Marko to try it by hand.
 
 **State 6.11.2026 (later): v7, the DASHBOARD.** `app/Dashboard.swift`: Part, Dash (on/off per part, bare with

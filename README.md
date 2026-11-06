@@ -235,7 +235,9 @@ and the pane scrolls sideways: NAME · TIME · RES · FPS · BIT RATE · CODEC �
 TIMECODE · WRITTEN BY · TRACKS · KIND · MODIFIED, every title sorts. In the preview (Space) ↑ ↓ go through the files,
 ← → jump to the pane at the left or right and play its file (`dlmon.py view left|right`).
 
-## What works (v20, 6.11.2026)
+## What works (v21, 6.11.2026)
+
+- **A file being written shows it (v21):** in a pane, a file whose size grows shows after its name, in amber, `size · exact bytes (speed/s)` (e.g. `150.0 MB · 150,000,000 bytes (24.7 MB/s)`), updated every second, also in the SIZE column; three quiet seconds and it is a plain file again. ICONS shows the same line under the name.
 
 | Key / action | What it does |
 |---|---|

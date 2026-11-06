@@ -76,3 +76,4 @@
   paths line; drag the window with performDrag in a gesture instead. And a fullSizeContentView bar can be hidden under
   the system title bar: put the line in a NSTitlebarAccessoryViewController (.right) instead.
 - Do not full-screen-screenshot while Marko works in another app: capture my own windows by id (screencapture -l).
+- v21: a folder watch (DispatchSource) fires when files are added, not while one grows; growth needs its own 1 s stat tick, in the common run loop mode, so it also runs during scrolling.
