@@ -211,3 +211,4 @@ The title bar is gone: the paths of all panes sit in the title row, each cut at 
 "sorry, now I see that the info for the file coming up, the yellow text should be on the left side thing in the view"
 
 **Status:** saved first (6.11.2026). Plan (v23): the amber text (writing · size · bytes (speed)) comes BEFORE the file name, at the left of the line, so it is always in view whatever the name length and the columns do.
+**Status (6.11.2026, ~06:20):** DONE v23, GitHub run 42165444591 green, Latest, installed and signed. The amber text now stands first, at the left, before the name (window capture: `writing · 819 kB · 819,239 bytes (0 B/s)  V5-HIR_96_..._B_4x5.mp4`).
