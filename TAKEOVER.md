@@ -51,3 +51,11 @@ for `file`, else the Hugging Face cache folder of its repo. Icon `icon/make_icon
 **31.10.2026, v3: TOP on the first row.** Marko: *"Each needs to have the same user interface elements. On, off and top"*.
 TOP left of ✕ (green = window `.floating`, UserDefaults `onTop`, applied at launch); OFF, TOP, ✕ are Accessibility
 buttons (`off`, `top`, `close`). A build is relaunched only when no row is running (`dlmon.py list`): OFF stops the server.
+
+## 6.11.2026, v10: MediaInfo columns, pane jump in the preview
+
+Built by GitHub (run 42152019244 green), release v10 Latest, installed and signed "Mantra Apps" (sign
+Contents/Resources/mediainfo first, then the app). The workflow downloads MediaInfo_CLI_26.05_Mac.dmg from mediaarea.net
+on the runner (universal, links only libz/libc++/libSystem). app/MediaInfo.swift parses `mediainfo --Output=JSON`;
+LCOLS in app/Panes.swift is the column list (order = Marko's: time, resolution, fps, bit rate, codec). Waiting: Marko
+tries ← → in the full-screen preview.

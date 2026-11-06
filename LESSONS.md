@@ -61,3 +61,11 @@
 - (6.11.2026) **A bare-bone layout keeps the way back**: entering it stores the parts and the pane folders
   (`dash.before`, `dash.before.paths`); leaving puts them back, with the folder the one pane showed as pane 1.
 
+
+## 6.11.2026: media details
+
+- Marko wants every file on ONE line with a horizontal scroller, not a wrapped details line and not a report under it
+  (v8/v9 wrapped; v10 is the answer). Field order for him: time, resolution, fps, bit rate, codec.
+- A SwiftUI List scrolls sideways inside ScrollView(.horizontal) when it is given a fixed width and the height of the
+  GeometryReader; column widths are measured with NSString.size(withAttributes:) so nothing is cut.
+- MediaArea's Mac CLI dmg holds a self-contained universal `mediainfo`: no dylib bundling needed.

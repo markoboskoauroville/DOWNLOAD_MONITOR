@@ -223,3 +223,11 @@ a second and acts through `POST /control/<id>/<action>` and `/forget_many`; **th
 so every session keeps calling them as before. Opening the app starts `monitor.py` if :8833 is down; quitting the app
 stops it (`POST /quit`), as the star's second tick did. A download dlmon.py started keeps going (its worker has a
 session of its own); a session that needs the monitor starts it again with `dlmon.py up`.
+
+## v10: every media detail, one line per file (6.11.2026)
+
+MediaArea's **MediaInfo** (26.05, inside the app at Contents/Resources/mediainfo, Homebrew's as a fallback) reads every
+video, sound and picture a pane shows, two at a time, once per file and date. LIST is one line per file, nothing wraps,
+and the pane scrolls sideways: NAME · TIME · RES · FPS · BIT RATE · CODEC · SIZE · DEPTH · COLOUR · SCAN · AUDIO ·
+TIMECODE · WRITTEN BY · TRACKS · KIND · MODIFIED, every title sorts. In the preview (Space) ↑ ↓ go through the files,
+← → jump to the pane at the left or right and play its file (`dlmon.py view left|right`).

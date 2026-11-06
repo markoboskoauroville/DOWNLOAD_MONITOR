@@ -102,3 +102,14 @@ PATH / QUEUE off. Left in FULL with HIR_96 (left) and HIR_98 (right) in LIST. Ma
 "let's continue. Update our app. Download, copy, move Because this is mostly used for media work, I need all media details. Find the repository media info and let it read all possible media info inside the file. In list view, I can see all this info for each file."
 
 **Status:** saved first (6.11.2026).
+**Status (6.11.2026, ~03:45):** v8 to v10 built by GitHub (v10: run 42152019244, green; release v10 Latest), installed and
+signed "Mantra Apps". MediaArea's MediaInfo 26.05 (github.com/MediaArea/MediaInfo, its own universal Mac command line,
+needs only system libraries) is inside the app, put there by the workflow. Follow-ups the same night, Marko: "my media
+info wants to be only in one line ... without report. I need to have a horizontal scroller ... I want to have each file
+on one line", "the most important field is time ... Then resolution, then frame per second, then bitrate, and then
+codec", and "when I'm previewing my files with spacebar, I need to be able to jump between panes". So LIST (v10): one
+line per file, nothing wraps, the pane scrolls sideways; columns NAME · TIME · RES · FPS · BIT RATE · CODEC · SIZE ·
+DEPTH · COLOUR · SCAN · AUDIO · TIMECODE · WRITTEN BY · TRACKS · KIND · MODIFIED, each as wide as its longest value, a
+media column empty for the whole folder left out, every title sorts. In the preview ↑ ↓ = file, ← → = the pane at the
+left / right plays its file; a click in another pane takes the preview there (`dlmon.py view left|right`). Checked by
+window captures (two panes, one pane wide) and the jump from Python. Marko to try ← → by hand in the full-screen preview.
