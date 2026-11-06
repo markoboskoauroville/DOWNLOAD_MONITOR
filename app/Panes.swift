@@ -101,6 +101,7 @@ final class Pane: ObservableObject, Identifiable {
     @Published var items: [Item] = []
     @Published var selection = Set<String>()
     @Published var showHidden = false
+    @Published var filter = ""                              // v11: the box next to NAME; not remembered
     @Published var free = ""
     @Published var mode: String { didSet { UserDefaults.standard.set(mode, forKey: "pane.\(index).mode") } }
     @Published var iconSize: Double { didSet { UserDefaults.standard.set(iconSize, forKey: "pane.\(index).icon") } }
@@ -235,9 +236,19 @@ final class Pane: ObservableObject, Identifiable {
                        size: i.isLink ? 0 : i.isDir ? (sizes[i.path] ?? -1) : i.size, kind: i.kind, mtime: i.mtime,
                        duration: dur, media: f)
         }
+        let words = filter.lowercased().split(separator: " ").map(String.init)
+        if !words.isEmpty { r = r.filter { Pane.matches($0.name, words) } }
         r.sort { a, b in up ? Pane.less(key, a, b) : Pane.less(key, b, a) }
         if key == "name" { r = r.filter { $0.isDir } + r.filter { !$0.isDir } }
         return r
+    }
+    // v11 (Marko 6.11.2026: "next to the name ... add a text box. The text box is a simple filter"): every word typed must
+    // be in the name, any case; * and ? work as in a shell pattern (*_9x16.mp4)
+    static func matches(_ name: String, _ words: [String]) -> Bool {
+        let n = name.lowercased()
+        return words.allSatisfy { w in
+            w.contains("*") || w.contains("?") ? fnmatch("*" + w + "*", n, 0) == 0 : n.contains(w)
+        }
     }
     var selectedBytes: Int64 {
         items.filter { selection.contains($0.path) }.reduce(Int64(0)) { t, i in t + (i.isDir ? (Sizer.shared.sizes[i.path] ?? 0) : i.size) }
@@ -292,7 +303,7 @@ final class Pane: ObservableObject, Identifiable {
     func state() -> [String: Any] {
         ["pane": index + 1, "path": path, "mode": mode, "icon_size": Int(iconSize), "preview": preview,
          "sort": sortKey + (ascending ? " up" : " down"),
-         "items": items.count, "selected": rows.filter { selection.contains($0.path) }.map { $0.path }]
+         "items": items.count, "shown": rows.count, "filter": filter, "selected": rows.filter { selection.contains($0.path) }.map { $0.path }]
     }
 }
 
@@ -440,6 +451,7 @@ struct PaneView: View {
             if dash.shown("views") { views }
             if pane.mode == "icons" {
                 if dash.shown("views") { slider }
+                HStack { FilterBox(pane: pane); Spacer() }
                 IconsView(pane: pane, rows: rows)
             } else {
                 ListView(pane: pane, rows: rows)
@@ -495,6 +507,26 @@ let MONO = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 let HEADF = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
 func textWidth(_ s: String, _ f: NSFont) -> CGFloat { ceil((s as NSString).size(withAttributes: [.font: f]).width) }
 
+// the filter box: type, and only the files whose name has the words stay; Escape or ✕ empties it
+struct FilterBox: View {
+    @ObservedObject var pane: Pane
+    var body: some View {
+        HStack(spacing: 4) {
+            TextField("filter", text: $pane.filter).textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced)).foregroundColor(.white)
+                .onExitCommand { pane.filter = "" }
+                .accessibilityLabel("Filter").accessibilityIdentifier("filter-\(pane.index + 1)")
+            if !pane.filter.isEmpty {
+                Button(action: { pane.filter = "" }) { Text("✕").foregroundColor(GREY) }.buttonStyle(.plain)
+                    .accessibilityLabel("Clear filter").accessibilityIdentifier("filter-clear-\(pane.index + 1)")
+            }
+        }
+        .padding(.horizontal, 6).padding(.vertical, 2).frame(width: 150)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.16)))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(pane.filter.isEmpty ? Color(white: 0.25) : GREEN, lineWidth: 1))
+    }
+}
+
 struct ListView: View {
     @ObservedObject var pane: Pane
     @ObservedObject var media = Media.shared
@@ -507,7 +539,7 @@ struct ListView: View {
     }
     // each column as wide as its longest value or its title (with room for ▲); a column empty for every line goes
     func widths() -> (CGFloat, [(LCol, CGFloat)]) {
-        let nameW = min(900, max(160, rows.map { textWidth($0.name, NSFont.systemFont(ofSize: 13)) }.max() ?? 0) + 30)
+        let nameW = min(900, max(230, rows.map { textWidth($0.name, NSFont.systemFont(ofSize: 13)) }.max() ?? 0) + 30)
         var out: [(LCol, CGFloat)] = []
         for c in LCOLS {
             let vals = rows.map { c.text($0) }
@@ -524,7 +556,10 @@ struct ListView: View {
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        head("NAME", "name").frame(width: nameW, alignment: .leading)
+                        HStack(spacing: 8) {
+                            head("NAME", "name")
+                            FilterBox(pane: pane)
+                        }.frame(width: nameW, alignment: .leading)
                         ForEach(cols, id: \.0.key) { c, w in head(c.title, c.key).frame(width: w, alignment: c.right ? .trailing : .leading) }
                     }.padding(.leading, 12).padding(.bottom, 2)
                     Line()

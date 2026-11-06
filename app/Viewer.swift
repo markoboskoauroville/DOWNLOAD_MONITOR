@@ -207,6 +207,10 @@ enum ViewCommands {
             p.move(c["action"] as? String == "next" ? 1 : -1, filesOnly: true)
             QL.shared.follow(p)
             return p.selectedFile.map { "now " + $0 } ?? "no file"
+        case "filter":
+            let t = c["text"] as? String ?? ""
+            ps.pick(n).forEach { $0.filter = t }
+            return t.isEmpty ? "filter cleared" : "filter \"\(t)\": " + ps.pick(n).map { "pane \($0.index + 1) shows \($0.rows.count)" }.joined(separator: ", ")
         case "front":
             front(); return "in front"
         case "show", "hide":
