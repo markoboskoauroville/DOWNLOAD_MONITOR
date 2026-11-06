@@ -82,3 +82,9 @@ prev|close|list`. Checked by window captures: LIST and ICONS of HIR_96 | HIR_98,
 from Python. Left showing HIR_96 (left) and HIR_98 (right) in LIST. Marko to try the arrow keys and Escape by hand in
 the full-screen preview.
 
+
+## 6.11.2026: a DASHBOARD row that turns every part of the window on and off
+
+"please, now at the top there are buttons: On/Off, V6 Top, and there is a man space. We need to have different parts of the interface there to turn them on and off. I can even have a bare-bone version with only one folder, so whatever is shown on the screen can be turned off and on. Make a top section, let's call it the dashboard. It should be one line, one row, grayed out if it's not active, and green with softif buttons to disable parts of the user interface"
+
+**Status:** saved first (6.11.2026).
