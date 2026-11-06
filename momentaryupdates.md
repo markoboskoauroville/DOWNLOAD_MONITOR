@@ -205,3 +205,9 @@ The title bar is gone: the paths of all panes sit in the title row, each cut at 
 
 **Status:** saved first (6.11.2026). Found: DaVinci holds V5-HIR_96_..._B_4x5.mp4 open for writing at 819,239 bytes, not growing for minutes (multi-pass analysis), so MediaInfo cannot read it and TIME, RES, FPS stay empty, and v21's live line did not show because the size did not change. Plan (v22): a file another process has open for writing is shown as WRITING (amber, size, bytes, speed 0) with WRITING in the TIME column, until it is closed; then its numbers are read.
 **Status (6.11.2026, ~06:05):** DONE v22, GitHub run 42165147418 green, Latest, installed and signed. While DaVinci holds V5-..._B_4x5.mp4 open the left pane shows `writing · 819 kB · 819,239 bytes (0 B/s)` in amber (lsof of the folder every 3 s); the numbers (TIME, RES, FPS) cannot exist until the render closes the file, then MediaInfo reads them. Known: the longer name column pushes the number columns right (scroll sideways) while a render is open.
+
+## 6.11.2026: the yellow live text on the left of the line
+
+"sorry, now I see that the info for the file coming up, the yellow text should be on the left side thing in the view"
+
+**Status:** saved first (6.11.2026). Plan (v23): the amber text (writing · size · bytes (speed)) comes BEFORE the file name, at the left of the line, so it is always in view whatever the name length and the columns do.
