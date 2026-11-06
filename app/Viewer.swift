@@ -217,8 +217,21 @@ enum ViewCommands {
                 return "1 PANE \(Dash.shared.bare ? "on" : "off")"
             }
             guard let k = Dash.key(name) else { return "no part \(name): " + Dash.parts.map { $0.key }.joined(separator: ", ") + ", bare" }
-            Dash.shared.set(k, on)
+            Dash.shared.endSolo(); Dash.shared.set(k, on)
             return "\(k) \(on ? "shown" : "hidden")"
+        case "solo":                                   // v11: only that part; "off" brings everything back
+            let name = c["part"] as? String ?? ""
+            if ["off", "none", "back"].contains(name.lowercased()) {
+                if Dash.shared.solo != nil { Dash.shared.unsolo() }
+                return "solo off: back as before"
+            }
+            guard let k = Dash.key(name) else { return "no part \(name): " + Dash.parts.map { $0.key }.joined(separator: ", ") }
+            Dash.shared.soloOn(k)
+            return "solo \(k)"
+        case "press":                                  // v11: the same as a click on the word
+            guard let k = Dash.key(c["part"] as? String ?? "") else { return "no part" }
+            Dash.shared.press(k)
+            return Dash.shared.solo == k ? "\(k) solo" : "\(k) \(Dash.shared.shown(k) ? "shown" : "hidden")"
         case "layout":
             switch (c["layout"] as? String ?? "").lowercased() {
             case "bare", "1pane", "one": if !Dash.shared.bare { Dash.shared.enterBare() }; return "layout bare: one pane"

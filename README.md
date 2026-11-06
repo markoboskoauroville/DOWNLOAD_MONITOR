@@ -25,6 +25,7 @@ hidden part gives its room to the rest.
 | STATUS | the line under each pane and the message line at the bottom |
 | QUEUE | the copy and move queue |
 | DOWNLOADS | the downloads (alone it takes room only while there is one) |
+| any part, pressed twice (v11) | first press hides it, second press SOLOs it (only that part, the word reads SOLO …; NAV, PATH, VIEWS, TOOLBAR, STATUS keep the panes under them), third press brings everything back as before. SOLO PANES = only the panes (Marko 6.11.2026: "First press is disabling that part. Second press is soloing that part") |
 | 1 PANE | bare bone: only the active pane, only its files; pressed again, the parts and the panes come back as they were |
 
 Remembered across launches (UserDefaults `dash.<part>`, `dash.bare`, `dash.before`, `dash.before.paths`). Accessibility
@@ -33,6 +34,8 @@ identifiers `dash-panes`, `dash-toolbar`, `dash-nav`, `dash-path`, `dash-views`,
 
 ```
 dlmon.py view show <part> | hide <part>     panes toolbar nav path views status queue downloads, or bare (1 PANE)
+dlmon.py view solo <part> | solo off        only that part (v11); off = back as before
+dlmon.py view press <part>                  the same as a click on the word
 dlmon.py view layout bare | full            bare bone, or every part shown (the panes back from bare)
 dlmon.py view parts                         each part on or off
 ```

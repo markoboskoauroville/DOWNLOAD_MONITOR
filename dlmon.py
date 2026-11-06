@@ -64,6 +64,8 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
     dlmon.py view list                  what every pane shows: folder, mode, size, selection, the preview
     dlmon.py view show|hide <part>      a part of the window (v7, the DASHBOARD row): panes, toolbar, nav, path, views,
                                         status, queue, downloads; or bare (1 PANE)
+    dlmon.py view solo <part>|off       only that part shown (v11, the word's second press); off: back as before
+    dlmon.py view press <part>          a click on the word: shown -> hidden -> solo -> back (v11)
     dlmon.py view layout bare|full      bare: one pane, only its files; full: every part (and the panes back from bare)
     dlmon.py view parts                 each part on or off
 
@@ -262,7 +264,7 @@ def app_running():
 def view(args):
     """dlmon.py view ...: a command for the window, through the server (POST /view); the window answers within a second."""
     if not args:
-        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|left|right|close|list|show|hide|layout|parts')
+        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|left|right|close|list|show|hide|solo|press|layout|parts')
     sub, args = args[0], list(args[1:])
     pane = flag(args, '--pane')
     mode = flag(args, '--mode')
@@ -331,9 +333,9 @@ def view(args):
             sys.exit('dlmon.py view %s <file>' % sub)
         c['file'] = path(args[0])
         c['full'] = not window
-    elif sub in ('show', 'hide'):
+    elif sub in ('show', 'hide', 'solo', 'press'):
         if len(args) != 1:
-            sys.exit('dlmon.py view %s panes|toolbar|nav|path|views|status|queue|downloads|bare' % sub)
+            sys.exit('dlmon.py view %s panes|toolbar|nav|path|views|status|queue|downloads|bare|off' % sub)
         c['part'] = args[0]
     elif sub == 'layout':
         if not args or args[0] not in ('bare', 'full'):

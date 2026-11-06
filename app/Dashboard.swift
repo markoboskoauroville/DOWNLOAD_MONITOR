@@ -4,7 +4,10 @@
 // row, grayed out if it's not active, and green with soft buttons to disable parts of the user interface".
 // One word per part: green = shown, grey = hidden; a hidden part gives its room to the rest. 1 PANE is the bare-bone
 // window (one pane, its files only); pressing it again brings back the parts and the panes as they were. Remembered in
-// UserDefaults (dash.<part>, dash.bare, dash.before, dash.before.paths). dlmon.py view show|hide|layout|parts drive it.
+// UserDefaults (dash.<part>, dash.bare, dash.before, dash.before.paths). dlmon.py view show|hide|solo|layout|parts drive it.
+// v11, Marko 6.11.2026: "second press on any part of the interface switcher dashboard. It's actually soloing that part
+// ... First press is disabling that part. Second press is soloing that part". So a word cycles: shown -> (press) hidden
+// -> (press) SOLO, only that part shown -> (press) everything back as it was before the solo. PANES solo = bare.
 import SwiftUI
 import AppKit
 
@@ -25,12 +28,14 @@ final class Dash: ObservableObject {
     ]
     @Published var on: [String: Bool]
     @Published var bare: Bool
+    @Published var solo: String?          // the part shown alone (v11), nil when none
     init() {
         let d = UserDefaults.standard
         var o: [String: Bool] = [:]
         for p in Dash.parts { o[p.key] = d.object(forKey: "dash.\(p.key)") as? Bool ?? true }
         on = o
         bare = d.bool(forKey: "dash.bare")
+        solo = d.string(forKey: "dash.solo")
     }
     static func key(_ name: String) -> String? {
         let k = name.lowercased().replacingOccurrences(of: " ", with: "")
@@ -45,7 +50,31 @@ final class Dash: ObservableObject {
         on[k] = v
         UserDefaults.standard.set(v, forKey: "dash.\(k)")
     }
-    func toggle(_ k: String) { set(k, !shown(k)) }
+    // the press on a word: shown -> hidden -> solo -> back as before the solo (v11)
+    func press(_ k: String) {
+        if solo == k { unsolo() }
+        else if solo == nil && shown(k) { set(k, false) }
+        else { soloOn(k) }
+    }
+    func toggle(_ k: String) { endSolo(); set(k, !shown(k)) }
+    func endSolo() { solo = nil; UserDefaults.standard.removeObject(forKey: "dash.solo") }   // a show/hide by hand ends it
+    func soloOn(_ k: String) {
+        let d = UserDefaults.standard
+        if solo == nil {                       // what to come back to: as it was, with this part shown again
+            var before = on; before[k] = true
+            d.set(before, forKey: "dash.solo.before")
+        }
+        // NAV, PATH, VIEWS, TOOLBAR and STATUS live in the pane area: their solo keeps the panes (the files) under them
+        let inPanes = ["toolbar", "nav", "path", "views", "status"].contains(k)
+        for p in Dash.parts { set(p.key, p.key == k || (inPanes && p.key == "panes")) }
+        solo = k; d.set(k, forKey: "dash.solo")
+    }
+    func unsolo() {
+        let d = UserDefaults.standard
+        let before = d.dictionary(forKey: "dash.solo.before") as? [String: Bool] ?? [:]
+        for p in Dash.parts { set(p.key, before[p.key] ?? true) }
+        solo = nil; d.removeObject(forKey: "dash.solo")
+    }
     func toggleBare() { if bare { leaveBare() } else { enterBare() } }
     // one pane (the active one), its files only; what was shown before is kept for the way back
     func enterBare() {
@@ -73,6 +102,7 @@ final class Dash: ObservableObject {
     }
     // FULL: every part shown (and out of 1 PANE first, with its panes back)
     func full() {
+        if solo != nil { unsolo() }
         if bare { leaveBare() }
         for p in Dash.parts { set(p.key, true) }
     }
@@ -80,6 +110,7 @@ final class Dash: ObservableObject {
         var s: [String: Any] = [:]
         for p in Dash.parts { s[p.key] = shown(p.key) }
         s["bare"] = bare
+        s["solo"] = solo ?? ""
         return s
     }
 }
@@ -91,9 +122,12 @@ struct DashRow: View {
         HStack(spacing: 1) {
             ForEach(Dash.parts) { p in
                 if p.key != Dash.parts[0].key { Bar_() }
-                Word(text: p.word, on: dash.shown(p.key), size: 11) { dash.toggle(p.key) }
-                    .help((dash.shown(p.key) ? "Shown: " : "Hidden: ") + p.what)
-                    .accessibilityIdentifier("dash-\(p.key)").accessibilityValue(dash.shown(p.key) ? "on" : "off")
+                Word(text: dash.solo == p.key ? "SOLO " + p.word : p.word, on: dash.shown(p.key), size: 11) { dash.press(p.key) }
+                    .help(dash.solo == p.key ? "Solo: only " + p.what + ". Press to bring everything back"
+                          : dash.shown(p.key) ? "Shown: " + p.what + ". Press to hide, press again to solo"
+                          : "Hidden: " + p.what + ". Press to solo it")
+                    .accessibilityIdentifier("dash-\(p.key)")
+                    .accessibilityValue(dash.solo == p.key ? "solo" : dash.shown(p.key) ? "on" : "off")
             }
             Text("·").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY.opacity(0.6)).padding(.horizontal, 4)
                 .accessibilityHidden(true)
