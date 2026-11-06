@@ -69,3 +69,10 @@
 - A SwiftUI List scrolls sideways inside ScrollView(.horizontal) when it is given a fixed width and the height of the
   GeometryReader; column widths are measured with NSString.size(withAttributes:) so nothing is cut.
 - MediaArea's Mac CLI dmg holds a self-contained universal `mediainfo`: no dylib bundling needed.
+
+- QLPreviewPanel's own full screen is what gives the black bars; a panel sized to the video's aspect (AVURLAsset
+  track naturalSize x preferredTransform) has none. Never enterFullScreenMode for the preview (Marko 6.11.2026).
+- A transparent NSViewRepresentable used as a SwiftUI background sits ABOVE the SwiftUI content in AppKit and hid the
+  paths line; drag the window with performDrag in a gesture instead. And a fullSizeContentView bar can be hidden under
+  the system title bar: put the line in a NSTitlebarAccessoryViewController (.right) instead.
+- Do not full-screen-screenshot while Marko works in another app: capture my own windows by id (screencapture -l).

@@ -234,3 +234,16 @@ video, sound and picture a pane shows, two at a time, once per file and date. LI
 and the pane scrolls sideways: NAME · TIME · RES · FPS · BIT RATE · CODEC · SIZE · DEPTH · COLOUR · SCAN · AUDIO ·
 TIMECODE · WRITTEN BY · TRACKS · KIND · MODIFIED, every title sorts. In the preview (Space) ↑ ↓ go through the files,
 ← → jump to the pane at the left or right and play its file (`dlmon.py view left|right`).
+
+## What works (v20, 6.11.2026)
+
+| Key / action | What it does |
+|---|---|
+| Space | Preview of the selected file, as big as the screen allows with the file's own shape, never black bars; ↑ ↓ files, ← → the pane at the left / right, Escape or Space closes |
+| Command-I | Info window: date created, date modified, size, full path, MediaInfo report (FULL for every field); follows the selection |
+| Right-click a file | Preview, then the column menu |
+| Right-click a column title | Tick columns on and off, "Columns…" opens the dialog to reorder them |
+| Filter box next to NAME | Only names with every word typed (`*` `?` allowed), Escape or ✕ clears |
+| Drag the line between panes | Resizes them (double click = equal) |
+| Dashboard word "N PANES" | Click: one more pane (1 to 5, then 1), long press: dialog to choose the number |
+| Mouse at the top | Red / yellow / green buttons appear; the title row shows every pane's path, end first |

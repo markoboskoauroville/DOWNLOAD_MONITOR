@@ -61,3 +61,9 @@ Contents/Resources/mediainfo first, then the app). The workflow downloads MediaI
 on the runner (universal, links only libz/libc++/libSystem). app/MediaInfo.swift parses `mediainfo --Output=JSON`;
 LCOLS in app/Panes.swift is the column list (order = Marko's: time, resolution, fps, bit rate, codec). Waiting: Marko
 tries ← → in the full-screen preview.
+
+## 6.11.2026 night, v11 to v20 (this session: v8 to v10 MediaInfo, v12 filter, v13 divider, v14 pane count + paths, v15 columns, v16 to v20 bare title bar, preview fit, Command-I)
+
+Built by GitHub, v20 Latest, installed signed "Mantra Apps". Files: app/MediaInfo.swift, Columns.swift, Info.swift,
+StatusBar.swift, Panes.swift (LCOLS, PaneDivider, FilterBox), Viewer.swift (QL.fit = preview shaped like the media).
+Waiting: Marko tries ← → and Command-I by hand; the dashboard still shows "SOLO PANES" from the other session's solo test.

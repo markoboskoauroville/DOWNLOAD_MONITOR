@@ -185,3 +185,8 @@ window with no bars, refitted for every file; right-click a file = Preview) inst
 "I wanted to know what works in this application. Spacebar is preview, as we said, never with the black bars. Also, Command-I is showing information about the file at the top. It shows the full path under that, Media Info Report, and before all that, Date Created, Date Modified"
 
 **Status:** saved first (6.11.2026). Plan: Command-I opens (and closes) an Info window that follows the selection: Date Created, Date Modified, the full path, then the MediaInfo report (FULL for every field).
+**Status (6.11.2026, ~04:25):** v20 built by GitHub (run 42154953168 green, Latest), installed and signed. Command-I (or `dlmon.py view
+info [file|close|full|normal]`) opens the Info window, which follows the selection of the pane you work in: DATE
+CREATED, DATE MODIFIED, SIZE, FULL PATH, then MEDIA INFO REPORT (FULL = every field); Command-I or Escape closes it.
+The title bar is gone: the paths of all panes sit in the title row, each cut at the beginning with … and its end kept
+(checked by window capture), the red/yellow/green buttons show while the mouse is in the top 30 pt. Marko to try.
