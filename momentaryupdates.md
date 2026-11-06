@@ -148,3 +148,13 @@ and take width (each keeps 200 pt), remembered; double click shares equally agai
 "the text at the top of this window, I don't need it. I know that's the Download, Copy and Move application at the top. We're going to use it as a status window at the top. You need to write the full path of everything that's in the paths. That means there will be a full path, then a pipe, then a full path, and so on, depending on how many paths we have in our pain dashboard part, it needs to show one pain when there is only one pain. I click again, then there will be two pains, then I can click again, and until five. Five is the maximum number of pains. To quickly jump to the number of pains, I just long press and the dialog pops up, and I just choose my number"
 
 **Status:** saved first (6.11.2026).
+
+**Status (6.11.2026, ~04:00):** v13 (drag the line between panes) and v14 (status window at the top with every pane's full path
+parted by pipes; the panes word counts 1 to 5 on a click, a long press asks the number; `dlmon.py view count N`) built by
+GitHub, installed.
+
+## 6.11.2026: right-click on a column title: choose and reorder the columns in a dialog
+
+"right-click on any pane column give me option to disable some of the columns and also to reorder them. So, new dialog opening up for reordering, enabling disabling certain columns"
+
+**Status:** saved first (6.11.2026).
