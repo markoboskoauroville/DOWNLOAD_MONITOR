@@ -47,14 +47,16 @@ struct PathsBar: View {
                 }
             }.padding(.horizontal, 16).frame(maxHeight: .infinity)
         }
-        .frame(height: 26).background(WindowDrag().background(INK))
+        .frame(height: 26).background(INK).modifier(WindowDrag())
     }
 }
-// the top line moves the window (there is no title bar to drag any more)
-struct WindowDrag: NSViewRepresentable {
-    final class V: NSView { override var mouseDownCanMoveWindow: Bool { true } }
-    func makeNSView(context: Context) -> NSView { V() }
-    func updateNSView(_ v: NSView, context: Context) {}
+// the top line moves the window (there is no title bar to drag any more): a mouse-down on it starts the window drag
+struct WindowDrag: ViewModifier {
+    func body(content: Content) -> some View {
+        content.gesture(DragGesture(minimumDistance: 0).onChanged { _ in
+            if let e = NSApp.currentEvent, e.type == .leftMouseDown || e.type == .leftMouseDragged { e.window?.performDrag(with: e) }
+        })
+    }
 }
 enum StatusBar {
     static var monitor: Any?
