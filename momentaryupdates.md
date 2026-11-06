@@ -190,3 +190,9 @@ info [file|close|full|normal]`) opens the Info window, which follows the selecti
 CREATED, DATE MODIFIED, SIZE, FULL PATH, then MEDIA INFO REPORT (FULL = every field); Command-I or Escape closes it.
 The title bar is gone: the paths of all panes sit in the title row, each cut at the beginning with … and its end kept
 (checked by window capture), the red/yellow/green buttons show while the mouse is in the top 30 pt. Marko to try.
+
+## 6.11.2026: live size and write speed on a file still being written
+
+"now let's upgrade our download copy and move mantra while the file is written on the disk, until it's finished on the left side, it means the file name needs to be updated to accommodate this. It's just in real time showing me how many bytes are coming and what the size of the file is at the moment, and also in parentheses, the speed of writing"
+
+**Status:** saved first (6.11.2026). Plan: a file that is still growing in a pane shows its name with the live size and, in parentheses, the write speed (bytes per second), updated in real time, until it stops growing; then the plain name again.
