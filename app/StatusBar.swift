@@ -47,35 +47,39 @@ struct PathsBar: View {
                 }
             }.padding(.horizontal, 16).frame(maxHeight: .infinity)
         }
-        .frame(height: 26).background(INK).modifier(WindowDrag())
-    }
-}
-// the top line moves the window (there is no title bar to drag any more): a mouse-down on it starts the window drag
-struct WindowDrag: ViewModifier {
-    func body(content: Content) -> some View {
-        content.gesture(DragGesture(minimumDistance: 0).onChanged { _ in
-            if let e = NSApp.currentEvent, e.type == .leftMouseDown || e.type == .leftMouseDragged { e.window?.performDrag(with: e) }
-        })
+        .frame(height: 28).background(INK)
     }
 }
 enum StatusBar {
     static var monitor: Any?
+    static var resizer: Any?
     static func buttons(_ w: NSWindow, hidden: Bool) {
         for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { w.standardWindowButton(b)?.isHidden = hidden }
     }
-    // every main window gets the bare look; run at launch (a few times, the window may not be there yet), on every
-    // view command and when the app comes forward
     static func installAll() -> String {
         var n = 0
         for w in NSApp.windows where isMainWindow(w) { install(on: w); n += 1 }
         return "\(n) window\(n == 1 ? "" : "s") bare"
     }
+    // the title row is the status line: no title text, the buttons only while the mouse is at the top, and in the row
+    // itself (an accessory at the right, as wide as the window less the button corner) the paths line
     static func install(on w: NSWindow) {
-        w.styleMask.insert(.fullSizeContentView)
-        w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
         w.acceptsMouseMovedEvents = true
-        buttons(w, hidden: true)
+        if w.titlebarAccessoryViewControllers.isEmpty {
+            let host = NSHostingView(rootView: PathsBar())
+            host.frame = NSRect(x: 0, y: 0, width: max(300, w.frame.width - 96), height: 28)
+            let vc = NSTitlebarAccessoryViewController()
+            vc.view = host; vc.layoutAttribute = .right
+            w.addTitlebarAccessoryViewController(vc)
+            buttons(w, hidden: true)
+        }
+        if resizer == nil {
+            resizer = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: nil, queue: .main) { n in
+                guard let win = n.object as? NSWindow, isMainWindow(win), let v = win.titlebarAccessoryViewControllers.first?.view else { return }
+                v.setFrameSize(NSSize(width: max(300, win.frame.width - 96), height: 28))
+            }
+        }
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseExited, .leftMouseDown]) { e in
             guard let win = e.window, isMainWindow(win) else { return e }

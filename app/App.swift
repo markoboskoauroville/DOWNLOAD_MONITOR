@@ -29,7 +29,7 @@
 import SwiftUI
 import AppKit
 
-let VERSION = 19
+let VERSION = 20
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
@@ -540,9 +540,8 @@ struct MonitorView: View {
         }
     }
 
-    // v16: the paths line first, with no title bar over it
     var body: some View {
-        VStack(spacing: 0) { PathsBar(); inner }.ignoresSafeArea(.container, edges: .top)
+        inner
     }
     var inner: some View {
         VStack(alignment: .leading, spacing: 0) {

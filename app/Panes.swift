@@ -289,6 +289,7 @@ final class Pane: ObservableObject, Identifiable {
     // PREVIEW on: one click on a file opens it full screen, once it is clear the click is not a double click
     func selectionChanged() {
         if !selection.isEmpty { Panes.shared.active = index }
+        if InfoWindow.visible && !selection.isEmpty { InfoWindow.refresh(self) }
         if QL.shared.visible { QL.shared.follow(self); return }
         guard preview, selection.count == 1, selectedFile != nil else { return }
         pendingPreview?.cancel()

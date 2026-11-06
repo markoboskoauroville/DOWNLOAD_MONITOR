@@ -144,6 +144,12 @@ enum Keys {
     static var monitor: Any?
     static func install() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            // Command-I: information about the file (any of our windows); Escape closes the Info window
+            if e.keyCode == 34 && e.modifierFlags.intersection([.command, .option, .control, .shift]) == [.command],
+               e.window.map({ isMainWindow($0) || $0 === InfoWindow.window }) ?? false {
+                InfoWindow.toggle(Panes.shared.activePane); return nil
+            }
+            if e.keyCode == 53, let w = e.window, w === InfoWindow.window { InfoWindow.close(); return nil }
             guard let w = e.window, !(w is QLPreviewPanel), !(w is NSPanel), isMainWindow(w) else { return e }
             if w.firstResponder is NSText { return e }
             guard let p = Panes.shared.activePane else { return e }
@@ -258,6 +264,17 @@ enum ViewCommands {
             else if keys == ["close"] { ColumnsDialog.close(); return "the Columns dialog is closed" }
             else if !keys.isEmpty { pr.set(keys) }
             return "columns: " + pr.visible().map { $0.key }.joined(separator: " ")
+        case "info":
+            let t = c["target"] as? String ?? ""
+            if t == "close" { InfoWindow.close(); return "info closed" }
+            if t == "full" || t == "normal" { InfoModel.shared.full = t == "full"; return "info report " + t }
+            if !t.isEmpty, FileManager.default.fileExists(atPath: t) {
+                let dir = (t as NSString).deletingLastPathComponent
+                if let p = ps.list.first(where: { $0.path == dir }) ?? ps.activePane { p.selection = [t] }
+                InfoModel.shared.load(t)
+            }
+            InfoWindow.show(ps.activePane)
+            return "info: " + (InfoModel.shared.path ?? "nothing selected")
         case "front":
             front(); return "in front, " + StatusBar.installAll()
         case "show", "hide":

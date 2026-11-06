@@ -60,6 +60,7 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
                                         Up / Down in it go to the file before / after, Escape closes
     dlmon.py view next | prev           the file after / before in that pane (the preview follows), as Down / Up
     dlmon.py view filter [words] [--pane N]   the box next to NAME (v11): only names with every word (* ? allowed); none clears
+    dlmon.py view info [file|close|full|normal]   Command-I: dates, full path, MediaInfo report of the file (v20)
     dlmon.py view columns [reset|dialog|close|key ...]   the LIST columns (v15; right-click a title for the dialog): these, in this order, others off
     dlmon.py view count 1..5            the number of panes (v14: the dashboard word counts 1 to 5, a long press asks)
     dlmon.py view share [30 70 ...]     the width of each pane in percent (v13; dragging the line between panes does the same); none = equal
@@ -268,7 +269,7 @@ def app_running():
 def view(args):
     """dlmon.py view ...: a command for the window, through the server (POST /view); the window answers within a second."""
     if not args:
-        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|left|right|filter|share|count|columns|close|list|show|hide|solo|press|layout|parts')
+        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|left|right|filter|share|count|columns|info|close|list|show|hide|solo|press|layout|parts')
     sub, args = args[0], list(args[1:])
     pane = flag(args, '--pane')
     mode = flag(args, '--mode')
@@ -337,6 +338,8 @@ def view(args):
             sys.exit('dlmon.py view %s <file>' % sub)
         c['file'] = path(args[0])
         c['full'] = not window
+    elif sub == 'info':
+        c['target'] = path(args[0]) if args and args[0] not in ('close', 'full', 'normal') else (args[0] if args else '')
     elif sub == 'columns':
         c['keys'] = args
     elif sub == 'count':
