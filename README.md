@@ -5,6 +5,38 @@
 details, Finder's Quick Look full screen, driven from Python (`dlmon.py view`); the size beside every folder; ONE queue
 for copies and moves, one at a time. The server is still http://127.0.0.1:8833 and every dlmon.py command still works.**
 
+## The DASHBOARD: every part of the window on and off (v7, 6.11.2026)
+
+Marko, 6.11.2026: *"We need to have different parts of the interface there to turn them on and off. I can even have a
+bare-bone version with only one folder ... Make a top section, let's call it the dashboard. It should be one line, one
+row, grayed out if it's not active, and green"*
+
+The first row is one line: `DOWNLOAD, COPY AND MOVE  ON | OFF   PANES | TOOLBAR | NAV | PATH | VIEWS | STATUS | QUEUE |
+DOWNLOADS · 1 PANE   v7 TOP ✕`. Each part word is a soft text button: green while that part is shown, grey when hidden; a
+hidden part gives its room to the rest.
+
+| word | the part |
+|---|---|
+| PANES | the folder panes |
+| TOOLBAR | ADD PANE \| REMOVE PANE and COPY / MOVE over the panes |
+| NAV | each pane's PANE n line and BACK \| UP \| HOME \| VOLUMES \| HIDDEN |
+| PATH | each pane's path |
+| VIEWS | each pane's ICONS \| LIST \| PREVIEW and the icon size slider |
+| STATUS | the line under each pane and the message line at the bottom |
+| QUEUE | the copy and move queue |
+| DOWNLOADS | the downloads (alone it takes room only while there is one) |
+| 1 PANE | bare bone: only the active pane, only its files; pressed again, the parts and the panes come back as they were |
+
+Remembered across launches (UserDefaults `dash.<part>`, `dash.bare`, `dash.before`, `dash.before.paths`). Accessibility
+identifiers `dash-panes`, `dash-toolbar`, `dash-nav`, `dash-path`, `dash-views`, `dash-status`, `dash-queue`,
+`dash-downloads`, `dash-bare`. From Python:
+
+```
+dlmon.py view show <part> | hide <part>     panes toolbar nav path views status queue downloads, or bare (1 PANE)
+dlmon.py view layout bare | full            bare bone, or every part shown (the panes back from bare)
+dlmon.py view parts                         each part on or off
+```
+
 ## The file viewer: any number of panes, ICONS | LIST, Quick Look, driven from Python (v6, 6.11.2026)
 
 Marko, 6.11.2026: *"update my application, download that and copier, and it can open any number of folders at the same

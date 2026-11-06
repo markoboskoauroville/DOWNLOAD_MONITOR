@@ -55,3 +55,9 @@
 - (6.11.2026) **A pane method called `open` hides Darwin's `open(path, O_EVTONLY)`** inside the class: named openItems.
 - (6.11.2026) **Python to a SwiftUI app without Apple Events**: the server keeps numbered commands, the window polls
   them, answers each by number, and posts its state; a fresh window takes only the last 20 seconds of commands.
+- (6.11.2026) **A part that hides must give back its room**: the panes and the queue sit in a VSplitView only while both
+  are shown, else the one left takes the whole height (`maxHeight: .infinity`); DOWNLOADS alone counts only while there
+  is a download, or it held an empty half of the window.
+- (6.11.2026) **A bare-bone layout keeps the way back**: entering it stores the parts and the pane folders
+  (`dash.before`, `dash.before.paths`); leaving puts them back, with the folder the one pane showed as pane 1.
+

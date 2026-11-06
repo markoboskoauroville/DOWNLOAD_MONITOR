@@ -1,5 +1,12 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
+**State 6.11.2026 (later): v7, the DASHBOARD.** `app/Dashboard.swift`: Part, Dash (on/off per part, bare with
+enterBare/leaveBare/full, UserDefaults `dash.*`), DashRow (the words in the first row). PaneView is split into header,
+nav, views, slider, footer, each behind `dash.shown(...)`; MonitorView.parts picks the panes over the queue (VSplitView)
+or either alone. ViewCommands: `show`, `hide`, `layout`; the state carries `parts`. `dlmon.py view show|hide|layout|parts`.
+Built by GitHub (run 42148103596 green), release v7 Latest, installed and signed "Mantra Apps"; left in FULL showing
+HIR_96 | HIR_98 ALL_VERSIONS_2026-11-05 in LIST.
+
 **State 6.11.2026: v6, the file viewer.** `app/Panes.swift`: Pane (folder, items, selection, mode icons|list, iconSize,
 preview, sortKey/ascending, all in UserDefaults `pane.<i>.*`), Panes (the list, `panes.paths`, active), Sizer, Durations
 (AVURLAsset), PaneView, ListView/ListRow (own sortable titles, wrapping names), IconsView/IconCell, Flow (wrapping rows).

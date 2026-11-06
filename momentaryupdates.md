@@ -88,3 +88,10 @@ the full-screen preview.
 "please, now at the top there are buttons: On/Off, V6 Top, and there is a man space. We need to have different parts of the interface there to turn them on and off. I can even have a bare-bone version with only one folder, so whatever is shown on the screen can be turned off and on. Make a top section, let's call it the dashboard. It should be one line, one row, grayed out if it's not active, and green with softif buttons to disable parts of the user interface"
 
 **Status:** saved first (6.11.2026).
+**Status (6.11.2026, ~03:15):** v7 built by GitHub (run 42148103596, green; release v7 Latest), installed and signed
+"Mantra Apps", running. The first row is the DASHBOARD, one line: ON | OFF, then PANES | TOOLBAR | NAV | PATH | VIEWS |
+STATUS | QUEUE | DOWNLOADS · 1 PANE (green = shown, grey = hidden), then v7 TOP ✕. 1 PANE is the bare bone (one pane,
+only its files) and gives everything back when pressed again; every choice is remembered. Python: `dlmon.py view
+show|hide <part>`, `view layout bare|full`, `view parts`. Checked by window captures: full, bare bone, and TOOLBAR /
+PATH / QUEUE off. Left in FULL with HIR_96 (left) and HIR_98 (right) in LIST. Marko to try the words by hand.
+
