@@ -1,5 +1,7 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
+**v22 (6.11.2026, ~06:05): WRITING.** `Pane.scanOpen()` runs `lsof -F fan +d <folder>` every 3 s on a background queue; a file another program has open for writing (access w/u) is a live row (`Live.held`) even when its size does not change (DaVinci multi-pass analysis leaves a 819 KB stub for minutes); the TIME column says `writing` until MediaInfo can read it. Run 42165147418 green.
+
 **v21 (6.11.2026, ~05:50): live size and write speed.** `app/Panes.swift`: `Live` (size, speed, text), `Pane.live` + a 1 s tick (common run loop mode) that stats every file of the folder, a growing file is live, three unchanged ticks end it and reload; Row.live/shownName, ListRow and IconCell draw it in AMBER; `state()` carries `live`. GitHub run 42164592345 green, v21 Latest, installed, signed, proven with a 25 MB/s test file (window capture: `150.0 MB · 150,000,000 bytes (24.7 MB/s)`, plain name after it stopped). Marko to try it on a real download or copy.
 
 **v11 (6.11.2026, ~04:15): DASHBOARD solo.** First press hides a part, second solos it, third brings everything back; run 42152482750 green, installed and signed "Mantra Apps", checked by `dlmon.py view press` and a window capture. Marko to try it by hand.
