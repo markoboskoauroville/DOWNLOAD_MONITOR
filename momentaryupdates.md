@@ -176,3 +176,12 @@ beginning with … and the end kept (short paths keep their room).
 "please, when you invite preview, it can be in full screen, but never with the black bars on the left and right. Black bars are not an option. Only if I click on this preview window as it is in the macOS full screen, then it goes with these black bars. But I don't want to see black bars when I right-click on any file"
 
 **Status:** saved first (6.11.2026).
+**Status (6.11.2026, ~04:20):** v17 (the preview is never macOS full screen: the panel gets the shape of the video, so a 9x16 is a tall
+window with no bars, refitted for every file; right-click a file = Preview) installed and checked by a window list
+(743 x 1346 for a 9x16). v18/v19: the bare title bar; the paths line was hidden under the system title bar, being fixed.
+
+## 6.11.2026: Command-I = information about the file
+
+"I wanted to know what works in this application. Spacebar is preview, as we said, never with the black bars. Also, Command-I is showing information about the file at the top. It shows the full path under that, Media Info Report, and before all that, Date Created, Date Modified"
+
+**Status:** saved first (6.11.2026). Plan: Command-I opens (and closes) an Info window that follows the selection: Date Created, Date Modified, the full path, then the MediaInfo report (FULL for every field).
