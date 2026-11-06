@@ -12,6 +12,7 @@
 // Commands: what `dlmon.py view …` puts on the server (POST /view), polled by the window and applied here.
 import SwiftUI
 import AppKit
+import AVFoundation
 import QuickLookUI
 import QuickLookThumbnailing
 
@@ -43,6 +44,33 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     var panel: QLPreviewPanel? { QLPreviewPanel.sharedPreviewPanelExists() ? QLPreviewPanel.shared() : nil }
     var visible: Bool { panel?.isVisible ?? false }
     var file: String? { pane?.selectedFile }
+    var fitted = false
+    // the shape of the video (as it plays, turned if it is rotated) or the picture: width / height
+    static func aspect(_ path: String) -> CGFloat? {
+        let url = URL(fileURLWithPath: path)
+        if let t = AVURLAsset(url: url).tracks(withMediaType: .video).first {
+            let s = t.naturalSize.applying(t.preferredTransform)
+            if abs(s.width) > 0 && abs(s.height) > 0 { return abs(s.width) / abs(s.height) }
+        }
+        if let rep = NSImageRep(contentsOf: url), rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+            return CGFloat(rep.pixelsWide) / CGFloat(rep.pixelsHigh)
+        }
+        return nil
+    }
+    func fit() {
+        guard let panel = panel, panel.isVisible, !panel.isInFullScreenMode, let f = file else { return }
+        let screen = NSApp.windows.first { isMainWindow($0) && $0.isVisible }?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let vis = screen.visibleFrame
+        let chrome = max(0, panel.frame.height - panel.contentLayoutRect.height)
+        var size = vis.size
+        if let a = QL.aspect(f) {
+            var w = (vis.height - chrome) * a, h = vis.height
+            if w > vis.width { w = vis.width; h = w / a + chrome }
+            size = CGSize(width: w.rounded(), height: h.rounded())
+        }
+        panel.setFrame(NSRect(x: vis.midX - size.width / 2, y: vis.maxY - size.height, width: size.width, height: size.height),
+                       display: true, animate: false)
+    }
 
     // open the panel for this pane's selected file; full = Finder's full screen (the screen of this window)
     func show(_ p: Pane, full: Bool) {
@@ -51,10 +79,12 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
         panel.dataSource = self
         panel.delegate = self
         if panel.isVisible { panel.reloadData() } else { panel.makeKeyAndOrderFront(nil); panel.reloadData() }
-        if full && !panel.isInFullScreenMode {
-            let screen = NSApp.windows.first { isMainWindow($0) && $0.isVisible }?.screen ?? NSScreen.main
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { _ = panel.enterFullScreenMode(screen, withOptions: nil) }
-        }
+        // v17 (Marko 6.11.2026: "it can be in full screen, but never with the black bars on the left and right"): the
+        // preview is not put into macOS full screen (that is what makes the black bars); the panel is made as big as the
+        // screen allows with the SHAPE of the picture, so a 9x16 video is a tall window with no bars. His own click on
+        // the green button still gives macOS full screen.
+        fitted = full
+        if full && !panel.isInFullScreenMode { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.fit() } }
     }
     // out of full screen first; the panel comes back at the end of that animation, so it is put away after it
     // (measured 6.11.2026: an orderOut right after exitFullScreenMode left the small panel playing)
@@ -75,6 +105,7 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
         Panes.shared.active = p.index
         panel.dataSource = self
         panel.reloadData()
+        if fitted { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.fit() } }       // the next file may be another shape
     }
     // v10 (Marko 6.11.2026: "when I'm previewing my files with spacebar, I need to be able to jump between panes ...
     // when I jump another pane, it will start to play that file. It will not stay in the old folder"): ← → in the

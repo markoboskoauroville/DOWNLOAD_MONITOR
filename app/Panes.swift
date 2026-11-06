@@ -550,6 +550,21 @@ struct FilterBox: View {
     }
 }
 
+// the right-click menu of a file: PREVIEW (as big as the screen allows, no black bars), then the columns
+struct FileMenu: View {
+    let pane: Pane; let sel: Set<String>
+    var body: some View {
+        if let f = sel.first, sel.count == 1, !(pane.rows.first { $0.path == f }?.isDir ?? true) {
+            Button("Preview") {
+                pane.selection = sel; pane.anchor = f; Panes.shared.active = pane.index
+                QL.shared.show(pane, full: true)
+            }
+            Divider()
+        }
+        ColumnMenu()
+    }
+}
+
 struct ListView: View {
     @ObservedObject var pane: Pane
     @ObservedObject var media = Media.shared
@@ -592,7 +607,7 @@ struct ListView: View {
                     List(selection: $pane.selection) {
                         ForEach(rows) { r in ListRow(r: r, nameW: nameW, cols: cols).tag(r.path) }
                     }
-                    .contextMenu(forSelectionType: String.self, menu: { _ in ColumnMenu() }, primaryAction: { sel in pane.openItems(sel) })
+                    .contextMenu(forSelectionType: String.self, menu: { sel in FileMenu(pane: pane, sel: sel) }, primaryAction: { sel in pane.openItems(sel) })
                     .scrollContentBackground(.hidden).background(Color(white: 0.07))
                     .accessibilityIdentifier("list-of-\(pane.index + 1)")
                 }
@@ -639,7 +654,9 @@ struct IconsView: View {
             .accessibilityValue(Text(r.sizeText))
             .accessibilityAddTraits(.isButton)
         let ident: String = "item-\(p.index + 1)-\(r.name)"
-        return named.accessibilityIdentifier(ident)
+        return named.contextMenu {
+            if !r.isDir { Button("Preview") { p.selection = [path]; p.anchor = path; Panes.shared.active = p.index; QL.shared.show(p, full: true) } }
+        }.accessibilityIdentifier(ident)
             .accessibilityAction { p.selection = [path] }
     }
 
