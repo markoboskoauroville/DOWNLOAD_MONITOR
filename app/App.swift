@@ -508,7 +508,8 @@ struct MonitorView: View {
         }.padding(.top, 8)
     }
 
-    var showQueue: Bool { dash.shown("queue") || dash.shown("downloads") }
+    // DOWNLOADS alone takes room only while there is a download to show
+    var showQueue: Bool { dash.shown("queue") || (dash.shown("downloads") && !downloads.isEmpty) }
     // what the DASHBOARD shows: the panes over the queue (a divider between them to drag), or one of them alone
     @ViewBuilder var parts: some View {
         if dash.shown("panes") && showQueue {
