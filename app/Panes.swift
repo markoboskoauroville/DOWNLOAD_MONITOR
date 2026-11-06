@@ -1,12 +1,17 @@
-// Panes.swift: the two panes, left and right, and the folder sizes (v5, 5.11.2026).
-// Marko: "This app will also have 2 windows, left and right, for copying between 2 locations manually. And it needs to
-// always next to every folder ... which ... Pathfinder doesn't do. Folder size— what is the folder size?"
-// Each pane: its path, BACK | UP | HOME | VOLUMES | HIDDEN, the free space of its disk, and a list where every folder
-// shows its whole size (measured in the background by Sizer, "…" until known, measured again when it changes) and every
-// file its size. A double click opens a folder (or a file in its app). COPY → / MOVE → / ← COPY / ← MOVE put the
-// selected items into the one queue, into the other pane's folder.
+// Panes.swift: the panes, side by side as vertical columns, and the folder sizes.
+// v5 (5.11.2026), Marko: "This app will also have 2 windows, left and right, for copying between 2 locations manually.
+// And it needs to always next to every folder ... which ... Pathfinder doesn't do. Folder size— what is the folder size?"
+// v6 (6.11.2026), Marko: "it can open any number of folders at the same time, creating many vertical windows. Now, for
+// this case, only two, and I can double-click any file, and it will open up in its viewer ... multiple views: icon view
+// and list view. If I'm in icon view, I have a slider at the top to enlarge icons, or a list view with all details."
+// Each pane: PANE n and the free space, BACK | UP | HOME | VOLUMES | HIDDEN, the path (every part a button), ICONS |
+// LIST | PREVIEW, and the files: ICONS is a grid of real thumbnails (QuickLookThumbnailing, a video shows a frame) with
+// a size slider; LIST is a table NAME · SIZE (folders measured by Sizer) · KIND · MODIFIED · DURATION, every column
+// sortable. A double click opens a folder, or a file in its own app; Space is Finder's Quick Look (Viewer.swift).
 import SwiftUI
 import AppKit
+import AVFoundation
+import UniformTypeIdentifiers
 
 func bytes(_ n: Int64) -> String {
     let v = Double(n)
@@ -16,10 +21,24 @@ func bytes(_ n: Int64) -> String {
     if v >= 1e3 { return String(format: "%.0f kB", v / 1e3) }
     return "\(n) B"
 }
+func duration(_ s: Double) -> String {
+    let t = Int(s.rounded())
+    return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t % 3600 / 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
+}
+let DATEFMT: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d.M.yyyy  HH:mm"; return f }()
 
 struct Item: Identifiable, Hashable {
     let path: String; let name: String; let isDir: Bool; let isLink: Bool; let size: Int64; let mtime: Date
+    let kind: String; let isMedia: Bool
     var id: String { path }
+}
+
+// one line of a pane as it is shown and sorted: the folder's measured size (-1 while unknown), the media's duration
+struct Row: Identifiable, Hashable {
+    let path: String; let name: String; let isDir: Bool; let isLink: Bool
+    let size: Int64; let kind: String; let mtime: Date; let duration: Double
+    var id: String { path }
+    var sizeText: String { isLink ? "link" : size < 0 ? "…" : bytes(size) }
 }
 
 // Folder sizes: the logical bytes of every file inside (the same count a copy makes), two folders at a time, in the
@@ -53,31 +72,63 @@ final class Sizer: ObservableObject {
     }
 }
 
-final class Pane: ObservableObject {
-    let key: String
+// The duration of a video or a sound: read from its header (AVURLAsset), two at a time, once per file and date
+final class Durations: ObservableObject {
+    static let shared = Durations()
+    @Published var d: [String: Double] = [:]
+    private var busy = Set<String>()
+    private let q: OperationQueue = {
+        let q = OperationQueue(); q.maxConcurrentOperationCount = 2; q.qualityOfService = .utility; return q
+    }()
+    func want(_ path: String, mtime: Date) {
+        let key = path + "|\(mtime.timeIntervalSince1970)"
+        if d[key] != nil || busy.contains(key) { return }
+        busy.insert(key)
+        q.addOperation {
+            let s = CMTimeGetSeconds(AVURLAsset(url: URL(fileURLWithPath: path)).duration)
+            DispatchQueue.main.async { self.d[key] = s.isFinite && s > 0 ? s : 0; self.busy.remove(key) }
+        }
+    }
+    func of(_ path: String, _ mtime: Date) -> Double { d[path + "|\(mtime.timeIntervalSince1970)"] ?? -1 }
+}
+
+final class Pane: ObservableObject, Identifiable {
+    var index: Int
     @Published var path: String
     @Published var items: [Item] = []
     @Published var selection = Set<String>()
     @Published var showHidden = false
     @Published var free = ""
+    @Published var mode: String { didSet { UserDefaults.standard.set(mode, forKey: "pane.\(index).mode") } }
+    @Published var iconSize: Double { didSet { UserDefaults.standard.set(iconSize, forKey: "pane.\(index).icon") } }
+    @Published var preview: Bool { didSet { UserDefaults.standard.set(preview, forKey: "pane.\(index).preview") } }
+    @Published var sort: [KeyPathComparator<Row>] = [KeyPathComparator(\Row.name, comparator: .localizedStandard)]
+    var columns = 1                                         // icons per row in ICONS (for ↑ ↓)
+    var anchor: String?                                     // where a shift click starts
     private var back: [String] = []
     private var source: DispatchSourceFileSystemObject?
     private var pending = false
     private var timer: Timer?
+    private var pendingPreview: DispatchWorkItem?
 
-    init(key: String, start: String) {
-        self.key = key
-        let saved = UserDefaults.standard.string(forKey: "pane.\(key)") ?? start
-        path = FileManager.default.fileExists(atPath: saved) ? saved : start
+    init(index: Int, start: String) {
+        self.index = index
+        let d = UserDefaults.standard
+        path = FileManager.default.fileExists(atPath: start) ? start : NSHomeDirectory()
+        mode = d.string(forKey: "pane.\(index).mode") ?? "list"
+        iconSize = d.object(forKey: "pane.\(index).icon") as? Double ?? 128
+        preview = d.bool(forKey: "pane.\(index).preview")
         load()
         // the sizes are measured again while the pane is open (a copy filling a folder, a file added deep inside)
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.load() }
     }
+    deinit { timer?.invalidate(); source?.cancel() }
+
     func go(_ p: String, remember: Bool = true) {
         guard p != path else { load(); return }
         if remember { back.append(path) }
         path = p; selection = []
-        UserDefaults.standard.set(p, forKey: "pane.\(key)")
+        Panes.shared.save()
         load()
     }
     func up() {
@@ -87,7 +138,8 @@ final class Pane: ObservableObject {
     func goBack() { if let p = back.popLast() { go(p, remember: false) } }
 
     func load() {
-        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .isSymbolicLinkKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .isSymbolicLinkKey,
+                                      .localizedTypeDescriptionKey, .contentTypeKey]
         let urls = (try? FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: path), includingPropertiesForKeys: keys,
                                                                  options: showHidden ? [] : [.skipsHiddenFiles])) ?? []
         var out: [Item] = []
@@ -96,8 +148,10 @@ final class Pane: ObservableObject {
             let link = v?.isSymbolicLink ?? false
             var dir = v?.isDirectory ?? false
             if link { var d: ObjCBool = false; if FileManager.default.fileExists(atPath: u.path, isDirectory: &d) { dir = d.boolValue } }
+            let media = !dir && (v?.contentType.map { $0.conforms(to: .audiovisualContent) } ?? false)
             out.append(Item(path: u.path, name: u.lastPathComponent, isDir: dir, isLink: link,
-                            size: Int64(v?.fileSize ?? 0), mtime: v?.contentModificationDate ?? .distantPast))
+                            size: Int64(v?.fileSize ?? 0), mtime: v?.contentModificationDate ?? .distantPast,
+                            kind: v?.localizedTypeDescription ?? (dir ? "Folder" : ""), isMedia: media))
         }
         out.sort { a, b in a.isDir != b.isDir ? a.isDir : a.name.localizedStandardCompare(b.name) == .orderedAscending }
         if out != items { items = out }
@@ -107,6 +161,7 @@ final class Pane: ObservableObject {
         if f != free { free = f }
         watch()
         for i in out where i.isDir && !i.isLink { Sizer.shared.want(i.path, mtime: i.mtime) }
+        for i in out where i.isMedia { Durations.shared.want(i.path, mtime: i.mtime) }
     }
     private func freeSpace() -> String {
         let u = URL(fileURLWithPath: path)
@@ -132,69 +187,316 @@ final class Pane: ObservableObject {
         s.resume()
         source = s
     }
+
+    // the lines in the order on screen: sorted by the column chosen; by name, the folders first (as before)
+    var rows: [Row] {
+        let sizes = Sizer.shared.sizes, durs = Durations.shared
+        var r = items.map { i in
+            Row(path: i.path, name: i.name, isDir: i.isDir, isLink: i.isLink,
+                size: i.isLink ? 0 : i.isDir ? (sizes[i.path] ?? -1) : i.size, kind: i.kind, mtime: i.mtime,
+                duration: i.isMedia ? durs.of(i.path, i.mtime) : -1)
+        }.sorted(using: sort)
+        let byName = sort.first.map { $0.keyPath == (\Row.name as PartialKeyPath<Row>) } ?? true
+        if byName { r = r.filter { $0.isDir } + r.filter { !$0.isDir } }
+        return r
+    }
     var selectedBytes: Int64 {
         items.filter { selection.contains($0.path) }.reduce(Int64(0)) { t, i in t + (i.isDir ? (Sizer.shared.sizes[i.path] ?? 0) : i.size) }
     }
+    var selectedFile: String? {
+        let files = rows.filter { selection.contains($0.path) && !$0.isDir }
+        return files.first?.path
+    }
+
+    // a click in ICONS: alone selects, ⌘ adds or takes away, ⇧ selects from the last click to here
+    func click(_ p: String) {
+        let m = NSEvent.modifierFlags
+        if m.contains(.command) {
+            if selection.contains(p) { selection.remove(p) } else { selection.insert(p) }
+        } else if m.contains(.shift), let a = anchor {
+            let order = rows.map { $0.path }
+            if let i = order.firstIndex(of: a), let j = order.firstIndex(of: p) { selection = Set(order[min(i, j)...max(i, j)]) }
+        } else { selection = [p] }
+        anchor = p
+        Panes.shared.active = index
+    }
+    // ← → ↑ ↓ in ICONS, and ↑ ↓ in the full-screen preview (files only there, so it goes from video to video)
+    func move(_ by: Int, filesOnly: Bool = false) {
+        let rs = rows.filter { !filesOnly || !$0.isDir }
+        guard !rs.isEmpty else { return }
+        let cur = rs.firstIndex { selection.contains($0.path) }
+        var n = cur.map { $0 + by } ?? (by > 0 ? 0 : rs.count - 1)
+        n = max(0, min(rs.count - 1, n))
+        selection = [rs[n].path]; anchor = rs[n].path
+    }
+    // a double click: a folder is entered, a file opens in its own app
+    func openItems(_ sel: Set<String>) {
+        pendingPreview?.cancel(); pendingPreview = nil
+        guard let p = sel.first, let it = items.first(where: { $0.path == p }) else { return }
+        if sel.count == 1 && it.isDir { go(it.isLink ? URL(fileURLWithPath: p).resolvingSymlinksInPath().path : p); return }
+        for s in sel where !(items.first(where: { $0.path == s })?.isDir ?? true) { NSWorkspace.shared.open(URL(fileURLWithPath: s)) }
+    }
+    // PREVIEW on: one click on a file opens it full screen, once it is clear the click is not a double click
+    func selectionChanged() {
+        if !selection.isEmpty { Panes.shared.active = index }
+        if QL.shared.visible { QL.shared.follow(self); return }
+        guard preview, selection.count == 1, selectedFile != nil else { return }
+        pendingPreview?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.pendingPreview = nil
+            if self.selectedFile != nil && !QL.shared.visible { QL.shared.show(self, full: true) }
+        }
+        pendingPreview = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval + 0.05, execute: w)
+    }
+    func state() -> [String: Any] {
+        ["pane": index + 1, "path": path, "mode": mode, "icon_size": Int(iconSize), "preview": preview,
+         "items": items.count, "selected": rows.filter { selection.contains($0.path) }.map { $0.path }]
+    }
 }
 
-struct ItemRow: View {
-    let i: Item
-    @ObservedObject var sizer = Sizer.shared
-    var size: String {
-        if i.isLink { return "link" }
-        if i.isDir { return sizer.sizes[i.path].map(bytes) ?? "…" }
-        return bytes(i.size)
+// All the panes, left to right. Their folders are remembered (the v5 left and right ones become panes 1 and 2).
+final class Panes: ObservableObject {
+    static let shared = Panes()
+    @Published var list: [Pane] = []
+    @Published var active = 0
+    init() {
+        let d = UserDefaults.standard
+        let paths = d.stringArray(forKey: "panes.paths")
+            ?? [d.string(forKey: "pane.left") ?? NSHomeDirectory(), d.string(forKey: "pane.right") ?? "/Volumes"]
+        list = (paths.isEmpty ? [NSHomeDirectory(), "/Volumes"] : paths).enumerated().map { Pane(index: $0.offset, start: $0.element) }
     }
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: i.isLink ? "arrow.turn.up.right" : i.isDir ? "folder.fill" : "doc")
-                .foregroundColor(i.isDir ? AMBER : GREY).frame(width: 16)
-            Text(i.name).font(.system(size: 13)).foregroundColor(.white)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 12)
-            Text(size).font(.system(size: 12, design: .monospaced)).foregroundColor(i.isDir ? AMBER : GREY)
-                .fixedSize()
-        }.padding(.vertical, 1)
-        .accessibilityElement(children: .combine)
+    func save() { UserDefaults.standard.set(list.map { $0.path }, forKey: "panes.paths") }
+    // the panes become these folders, one column each (dlmon.py view open)
+    func open(_ folders: [String]) {
+        guard !folders.isEmpty else { return }
+        if QL.shared.visible { QL.shared.close() }
+        list = folders.enumerated().map { Pane(index: $0.offset, start: $0.element) }
+        active = 0
+        save()
+    }
+    func add(_ folder: String? = nil) {
+        let start = folder ?? (list.indices.contains(active) ? list[active].path : NSHomeDirectory())
+        list.append(Pane(index: list.count, start: start))
+        save()
+    }
+    func removeLast() {
+        guard list.count > 1 else { return }
+        if QL.shared.pane === list.last { QL.shared.close() }
+        list.removeLast()
+        active = min(active, list.count - 1)
+        save()
+    }
+    var activePane: Pane? { list.indices.contains(active) ? list[active] : list.first }
+    // pane n (1-based) or, without a number, every pane
+    func pick(_ n: Int?) -> [Pane] {
+        guard let n = n else { return list }
+        return list.indices.contains(n - 1) ? [list[n - 1]] : []
+    }
+}
+
+// a row of words that wraps when the pane is narrow, so nothing is ever cut (never-cut-text)
+struct Flow: Layout {
+    var spacing: CGFloat = 2
+    var line: CGFloat = 2
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let w = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0, maxX: CGFloat = 0
+        for s in subviews {
+            let z = s.sizeThatFits(.unspecified)
+            if x > 0 && x + z.width > w { x = 0; y += row + line; row = 0 }
+            x += z.width + spacing; maxX = max(maxX, x); row = max(row, z.height)
+        }
+        return CGSize(width: w.isFinite ? w : maxX, height: y + row)
+    }
+    func placeSubviews(in b: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = b.minX, y = b.minY, row: CGFloat = 0
+        for s in subviews {
+            let z = s.sizeThatFits(.unspecified)
+            if x > b.minX && x + z.width > b.maxX { x = b.minX; y += row + line; row = 0 }
+            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(z))
+            x += z.width + spacing; row = max(row, z.height)
+        }
     }
 }
 
 struct PaneView: View {
     @ObservedObject var pane: Pane
+    @ObservedObject var panes = Panes.shared
     @ObservedObject var sizer = Sizer.shared
-    let title: String
-    func open(_ sel: Set<String>) {
-        guard sel.count == 1, let p = sel.first, let it = pane.items.first(where: { $0.path == p }) else { return }
-        if it.isDir { pane.go(it.isLink ? URL(fileURLWithPath: p).resolvingSymlinksInPath().path : p) }
-        else { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
+    @ObservedObject var durs = Durations.shared
+    var n: Int { pane.index + 1 }
+    var isActive: Bool { panes.active == pane.index }
+
+    // the path, every folder in it a button, parted by a grey > (swift-apps.md)
+    var crumbs: some View {
+        let parts = pane.path.split(separator: "/").map(String.init)
+        return Flow(spacing: 0) {
+            Word(text: "/", on: false) { pane.go("/") }.accessibilityIdentifier("path-\(n)-0")
+            ForEach(Array(parts.enumerated()), id: \.offset) { k, name in
+                if k > 0 { Text(">").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY.opacity(0.6)).accessibilityHidden(true) }
+                Button(action: { pane.go("/" + parts[0...k].joined(separator: "/")) }) { Text(name).fixedSize() }
+                    .buttonStyle(CrumbStyle(last: k == parts.count - 1))
+                    .accessibilityLabel(name).accessibilityIdentifier("path-\(n)-\(k + 1)")
+            }
+        }
     }
+
     var body: some View {
+        let rows = pane.rows
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 2) {
-                Text(title).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.trailing, 6)
-                Word(text: "BACK", on: false) { pane.goBack() }
-                Bar_()
-                Word(text: "UP", on: false) { pane.up() }
-                Bar_()
-                Word(text: "HOME", on: false) { pane.go(NSHomeDirectory()) }
-                Bar_()
-                Word(text: "VOLUMES", on: false) { pane.go("/Volumes") }
-                Bar_()
-                Word(text: "HIDDEN", on: pane.showHidden) { pane.showHidden.toggle(); pane.load() }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Button(action: { panes.active = pane.index }) { Text("PANE \(n)").fixedSize() }
+                    .buttonStyle(WordStyle(on: isActive, size: 11))
+                    .help("The active pane: COPY → and MOVE → start here").accessibilityLabel("Pane \(n)")
+                    .accessibilityIdentifier("pane-\(n)").accessibilityValue(isActive ? "active" : "")
                 Spacer(minLength: 8)
                 Text(pane.free).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize()
             }
-            Text(pane.path).font(.system(size: 12, design: .monospaced)).foregroundColor(.white)
-                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            List(selection: $pane.selection) {
-                ForEach(pane.items) { i in ItemRow(i: i).tag(i.path) }
+            Flow {
+                Word(text: "BACK", on: false) { pane.goBack() }.accessibilityIdentifier("back-\(n)")
+                Bar_()
+                Word(text: "UP", on: false) { pane.up() }.accessibilityIdentifier("up-\(n)")
+                Bar_()
+                Word(text: "HOME", on: false) { pane.go(NSHomeDirectory()) }.accessibilityIdentifier("home-\(n)")
+                Bar_()
+                Word(text: "VOLUMES", on: false) { pane.go("/Volumes") }.accessibilityIdentifier("volumes-\(n)")
+                Bar_()
+                Word(text: "HIDDEN", on: pane.showHidden) { pane.showHidden.toggle(); pane.load() }.accessibilityIdentifier("hidden-\(n)")
             }
-            .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in open(sel) })
-            .scrollContentBackground(.hidden).background(Color(white: 0.07))
-            Text(pane.selection.isEmpty ? "\(pane.items.count) items · double click opens"
-                 : "\(pane.selection.count) selected · \(bytes(pane.selectedBytes))")
-                .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
+            crumbs
+            Flow {
+                Word(text: "ICONS", on: pane.mode == "icons") { pane.mode = "icons" }.accessibilityIdentifier("icons-\(n)")
+                Bar_()
+                Word(text: "LIST", on: pane.mode == "list") { pane.mode = "list" }.accessibilityIdentifier("list-\(n)")
+                Bar_()
+                Word(text: "PREVIEW", on: pane.preview) { pane.preview.toggle() }.accessibilityIdentifier("preview-\(n)")
+                    .help("On: one click on a file opens it full screen, ↑ ↓ go to the file before and after, Escape closes")
+            }
+            if pane.mode == "icons" {
+                HStack(spacing: 8) {
+                    Text("SIZE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
+                    Slider(value: $pane.iconSize, in: 48...512).controlSize(.small)
+                        .accessibilityLabel("Icon size").accessibilityIdentifier("size-\(n)").accessibilityValue("\(Int(pane.iconSize))")
+                    Text("\(Int(pane.iconSize))").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).frame(width: 34, alignment: .trailing)
+                }
+                IconsView(pane: pane, rows: rows)
+            } else {
+                ListView(pane: pane, rows: rows)
+            }
+            Text(pane.selection.isEmpty ? "\(pane.items.count) items · double click opens · Space previews"
+                 : "\(pane.selection.count) selected · \(bytes(pane.selectedBytes)) · Space previews")
+                .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 6)
+        .onChange(of: pane.selection) { _ in pane.selectionChanged() }
+    }
+}
+
+struct CrumbStyle: ButtonStyle {
+    let last: Bool
+    func makeBody(configuration: Configuration) -> some View { CrumbFace(label: configuration.label, pressed: configuration.isPressed, last: last) }
+}
+struct CrumbFace<L: View>: View {
+    let label: L; let pressed: Bool; let last: Bool
+    @State private var hover = false
+    var body: some View {
+        label.font(.system(size: 12, design: .monospaced))
+            .foregroundColor(pressed ? RED : hover ? ORANGE : last ? .white : Color(white: 0.75))
+            .padding(.horizontal, 3).padding(.vertical, 2).contentShape(Rectangle())
+            .onHover { h in hover = h; if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+    }
+}
+
+struct ListView: View {
+    @ObservedObject var pane: Pane
+    let rows: [Row]
+    var body: some View {
+        Table(rows, selection: $pane.selection, sortOrder: $pane.sort) {
+            TableColumn("NAME", value: \Row.name, comparator: .localizedStandard) { r in
+                HStack(spacing: 6) {
+                    Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
+                    Text(r.name).fixedSize(horizontal: false, vertical: true)
+                }
+            }.width(min: 140, ideal: 280)
+            TableColumn("SIZE", value: \Row.size) { r in
+                Text(r.sizeText).font(.system(size: 12, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY)
+            }.width(min: 70, ideal: 90)
+            TableColumn("KIND", value: \Row.kind, comparator: .localizedStandard) { r in
+                Text(r.kind).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
+            }.width(min: 60, ideal: 110)
+            TableColumn("MODIFIED", value: \Row.mtime) { r in
+                Text(DATEFMT.string(from: r.mtime)).font(.system(size: 12, design: .monospaced)).foregroundColor(GREY)
+            }.width(min: 120, ideal: 140)
+            TableColumn("DURATION", value: \Row.duration) { r in
+                Text(r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…")
+                    .font(.system(size: 12, design: .monospaced)).foregroundColor(GREY)
+            }.width(min: 64, ideal: 76)
+        }
+        .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in pane.openItems(sel) })
+        .scrollContentBackground(.hidden).background(Color(white: 0.07))
+        .accessibilityIdentifier("table-\(pane.index + 1)")
+    }
+}
+
+struct IconsView: View {
+    @ObservedObject var pane: Pane
+    let rows: [Row]
+    var cell: CGFloat { CGFloat(pane.iconSize) + 16 }
+    var body: some View {
+        GeometryReader { g in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: cell, maximum: cell), spacing: 8, alignment: .top)],
+                              alignment: .leading, spacing: 10) {
+                        ForEach(rows) { r in
+                            IconCell(r: r, size: CGFloat(pane.iconSize), selected: pane.selection.contains(r.path))
+                                .id(r.path)
+                                .gesture(TapGesture(count: 2).onEnded { pane.openItems([r.path]) })
+                                .simultaneousGesture(TapGesture().onEnded { pane.click(r.path) })
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(r.name).accessibilityValue(r.sizeText)
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityIdentifier("item-\(pane.index + 1)-\(r.name)")
+                                .accessibilityAction(.default) { pane.selection = [r.path] }
+                        }
+                    }.padding(8)
+                }
+                .onChange(of: pane.selection) { s in
+                    if s.count == 1, let p = s.first { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(p) } }
+                }
+            }
+            .onAppear { pane.columns = max(1, Int((g.size.width - 8) / (cell + 8))) }
+            .onChange(of: g.size.width) { w in pane.columns = max(1, Int((w - 8) / (cell + 8))) }
+            .onChange(of: pane.iconSize) { _ in pane.columns = max(1, Int((g.size.width - 8) / (cell + 8))) }
+        }
+        .background(Color(white: 0.07))
+    }
+}
+
+struct IconCell: View {
+    let r: Row; let size: CGFloat; let selected: Bool
+    @State private var img: NSImage?
+    var bucket: CGFloat { size <= 64 ? 64 : size <= 128 ? 128 : size <= 256 ? 256 : 512 }
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(nsImage: img ?? Thumbs.icon(r.path)).resizable().aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+            Text(r.name).font(.system(size: 11)).foregroundColor(.white).multilineTextAlignment(.center)
+                .frame(maxWidth: size + 8).fixedSize(horizontal: false, vertical: true)
+            Text(r.isDir ? r.sizeText : r.duration > 0 ? "\(r.sizeText) · \(duration(r.duration))" : r.sizeText)
+                .font(.system(size: 10, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY).fixedSize()
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? BLUE.opacity(0.35) : Color.clear))
+        .contentShape(Rectangle())
+        .onAppear { load() }
+        .onChange(of: bucket) { _ in load() }
+    }
+    private func load() {
+        let p = r.path, b = bucket
+        Thumbs.thumb(p, b, r.mtime) { i in if p == r.path { img = i } }
     }
 }
 

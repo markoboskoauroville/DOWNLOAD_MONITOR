@@ -44,6 +44,23 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
     dlmon.py list                       what the page shows, in the terminal
     dlmon.py down                       stop the monitor
 
+  THE VIEWER (v6, 6.11.2026; Marko: "so in the future it's easy for me and for you to show me the folders I need to
+  check"). The window Download, Copy and Move (Mantra) is started if it is not running; panes are numbered from 1, left
+  to right; --pane N acts on one pane, without it on every pane.
+    dlmon.py view open <folder> [<folder> ...] [--mode icons|list]
+                                        the panes become these folders, one column each, the window in front
+    dlmon.py view add <folder>          one more pane at the right
+    dlmon.py view remove                the last pane goes (one always stays)
+    dlmon.py view go <folder> [--pane N]   that pane (default: the active one) shows this folder
+    dlmon.py view mode icons|list [--pane N]
+    dlmon.py view size <48..512> [--pane N]   the icon size (and ICONS)
+    dlmon.py view previewmode on|off [--pane N]   PREVIEW: one click on a file opens it full screen
+    dlmon.py view select <file>         select it (in the pane showing its folder, else the active pane goes there)
+    dlmon.py view preview <file> [--window]   Finder's Quick Look on it, full screen (--window: the small panel);
+                                        Up / Down in it go to the file before / after, Escape closes
+    dlmon.py view close                 close the preview
+    dlmon.py view list                  what every pane shows: folder, mode, size, selection, the preview
+
 Nothing here needs a key. The repo sizes come from the Hub when the network
 is there; a download shows without them too, counting up.
 """
@@ -229,6 +246,89 @@ def takeover(jid):
         print(http('/control/%s/start' % jid, {}))
 
 
+APP = '/Applications/Download, Copy and Move (Mantra).app'
+
+
+def app_running():
+    return subprocess.run(['pgrep', '-f', APP + '/Contents/MacOS/'], capture_output=True).returncode == 0
+
+
+def view(args):
+    """dlmon.py view ...: a command for the window, through the server (POST /view); the window answers within a second."""
+    if not args:
+        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|close|list')
+    sub, args = args[0], list(args[1:])
+    pane = flag(args, '--pane')
+    mode = flag(args, '--mode')
+    window = '--window' in args
+    args = [a for a in args if a != '--window']
+    if not up():
+        sys.exit('monitor did not start')
+    if not app_running():
+        subprocess.run(['open', '-g', APP])                       # the window itself comes forward for open / preview
+        for _ in range(40):
+            time.sleep(0.25)
+            if http('/view/state').get('age_s') is not None and http('/view/state')['age_s'] < 3:
+                break
+    if sub == 'list':
+        st = http('/view/state')
+        s = st.get('state')
+        if not s:
+            sys.exit('the window has not reported yet (is Download, Copy and Move (Mantra) open?)')
+        for p in s['panes']:
+            mark = '*' if p['pane'] == s['active'] else ' '
+            print('%s pane %d  %-5s%s%s  %d items  %s' % (mark, p['pane'], p['mode'].upper(),
+                  ('  icons %d' % p['icon_size']) if p['mode'] == 'icons' else '', '  PREVIEW' if p['preview'] else '',
+                  p['items'], p['path']))
+            for f in p['selected'][:20]:
+                print('        selected: %s' % f)
+        pv = s.get('preview') or {}
+        print('preview: %s' % (('%s%s' % (pv.get('file'), '  (full screen)' if pv.get('full') else '')) if pv.get('open') else 'closed'))
+        return
+    path = lambda a: os.path.abspath(os.path.expanduser(a))
+    c = {'action': sub}
+    if pane:
+        c['pane'] = int(pane)
+    if sub == 'open':
+        if not args:
+            sys.exit('dlmon.py view open <folder> [<folder> ...]')
+        c['folders'] = [path(a) for a in args]
+        bad = [f for f in c['folders'] if not os.path.isdir(f)]
+        if bad:
+            sys.exit('not a folder: ' + ', '.join(bad))
+        if mode:
+            c['mode'] = mode
+    elif sub in ('add', 'go'):
+        if len(args) != 1 or not os.path.isdir(path(args[0])):
+            sys.exit('dlmon.py view %s <folder>' % sub)
+        c['folder'] = path(args[0])
+    elif sub == 'mode':
+        if not args or args[0] not in ('icons', 'list'):
+            sys.exit('dlmon.py view mode icons|list [--pane N]')
+        c['mode'] = args[0]
+    elif sub == 'size':
+        if not args:
+            sys.exit('dlmon.py view size <48..512> [--pane N]')
+        c['size'] = int(args[0])
+    elif sub == 'previewmode':
+        c['on'] = not args or args[0] not in ('off', '0', 'no')
+    elif sub in ('select', 'preview'):
+        if len(args) != 1 or not os.path.exists(path(args[0])):
+            sys.exit('dlmon.py view %s <file>' % sub)
+        c['file'] = path(args[0])
+        c['full'] = not window
+    elif sub not in ('close', 'remove', 'front'):
+        sys.exit('unknown view command %s' % sub)
+    seq = http('/view', c)['seq']
+    for _ in range(40):
+        r = http('/view/done/%d' % seq)
+        if r.get('done'):
+            print(r['said'])
+            return
+        time.sleep(0.25)
+    sys.exit('sent (%d), but the window did not answer in 10 s' % seq)
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -290,6 +390,8 @@ def main(argv):
         if not up():
             sys.exit('monitor did not start')
         print(http('/control/%s/%s' % (args[0], cmd), {}))
+    elif cmd == 'view':
+        view(args)
     elif cmd == 'takeover':
         takeover(args[0])
     elif cmd == 'add':

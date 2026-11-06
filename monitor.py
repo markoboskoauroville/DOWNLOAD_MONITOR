@@ -39,6 +39,9 @@ true for whatever the source is. Nothing here needs the network or a key.
     POST /control/<id>/restart     throw the repo's cache away and start from zero
     POST /forget/<id>              take a finished job off the page
     POST /quit                     stop the server
+    POST /view {action, ...}       a command for the viewer window (dlmon.py view ...); GET /view/commands?after=N
+                                   is what the window polls, POST /view/done its answer (GET /view/done/<seq>),
+                                   POST /view/state what the panes show (GET /view/state)
 
 THE CONTROL (Marko, 7.9.2026: "make this monitor also the controller of the
 download process, two ways back and forth: pause, start, restart, give me the
@@ -670,6 +673,65 @@ def forget_many():
             LAST.pop(j['id'], None)
             gone.append(j['id'])
     return jsonify(ok=True, gone=gone)
+
+
+# ------------------------------------------------------------------ the viewer (v6, 6.11.2026)
+# dlmon.py view ... posts a command here; the window polls /view/commands twice a second, applies it, answers
+# /view/done with what it did, and posts what the panes show to /view/state (dlmon.py view list reads it).
+VIEW = {'seq': 0, 'cmds': [], 'done': {}, 'state': None, 'state_at': 0.0}
+VIEW_LOCK = threading.Lock()
+
+
+@app.post('/view')
+def view_cmd():
+    body = request.get_json(force=True, silent=True) or {}
+    if not body.get('action'):
+        return jsonify(error='action required'), 400
+    with VIEW_LOCK:
+        VIEW['seq'] += 1
+        c = dict(body, seq=VIEW['seq'], t=time.time())
+        VIEW['cmds'] = (VIEW['cmds'] + [c])[-50:]
+    return jsonify(ok=True, seq=c['seq'])
+
+
+@app.get('/view/commands')
+def view_cmds():
+    after = int(request.args.get('after', 0) or 0)
+    with VIEW_LOCK:
+        return jsonify(seq=VIEW['seq'], now=time.time(), cmds=[c for c in VIEW['cmds'] if c['seq'] > after])
+
+
+@app.post('/view/done')
+def view_done():
+    body = request.get_json(force=True, silent=True) or {}
+    with VIEW_LOCK:
+        VIEW['done'][int(body.get('seq', 0))] = body.get('said', '')
+        if len(VIEW['done']) > 100:
+            for k in sorted(VIEW['done'])[:-100]:
+                VIEW['done'].pop(k, None)
+    return jsonify(ok=True)
+
+
+@app.get('/view/done/<int:seq>')
+def view_result(seq):
+    with VIEW_LOCK:
+        if seq in VIEW['done']:
+            return jsonify(done=True, said=VIEW['done'][seq])
+    return jsonify(done=False)
+
+
+@app.post('/view/state')
+def view_state_put():
+    with VIEW_LOCK:
+        VIEW['state'] = request.get_json(force=True, silent=True)
+        VIEW['state_at'] = time.time()
+    return jsonify(ok=True)
+
+
+@app.get('/view/state')
+def view_state():
+    with VIEW_LOCK:
+        return jsonify(state=VIEW['state'], age_s=round(time.time() - VIEW['state_at'], 1) if VIEW['state_at'] else None)
 
 
 @app.post('/quit')

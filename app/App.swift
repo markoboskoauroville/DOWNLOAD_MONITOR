@@ -14,10 +14,17 @@
 // back; one queue, one copy or move at a time, each line with from → to, its hairline, DONE, %, SPEED, TIME LEFT,
 // READY AT, FILES, the file in hand, and PAUSE | CANCEL | FOLDER. Every word is a real button (Accessibility), orange
 // under the mouse, red while pressed. The window is resizable and remembers its place.
+// v6 (6.11.2026, Marko: "update my application ... to also be a file viewer ... it can open any number of folders at the
+// same time, creating many vertical windows ... icon view and list view ... use the previewer mechanism from the Mac's
+// itself ... you can ... through the Python API control it"): any number of panes as columns (Panes.swift), ICONS with
+// real thumbnails and a size slider, LIST with NAME SIZE KIND MODIFIED DURATION sortable, double click opens in the
+// file's own app, Space = Finder's Quick Look, PREVIEW = one click opens it full screen and ↑ ↓ go through the files
+// (Viewer.swift); dlmon.py view … drives it through the server (POST /view, polled here with /progress).
+// COPY → / MOVE → copy the active pane's selection into the pane to its right, ← COPY / ← MOVE into the one to its left.
 import SwiftUI
 import AppKit
 
-let VERSION = 5
+let VERSION = 6
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
@@ -60,10 +67,54 @@ final class Monitor: ObservableObject {
     @Published var said = ""
     @Published var picked = Set<String>()
     private var timer: Timer?
+    private var tick = 0
+    private var viewSeq = -1                      // the last view command applied (-1: none read yet)
+    private var lastState = ""
+    private var stateAt = Date.distantPast
 
     init() {
         ensureServer()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.poll() }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.poll(); self.pollView()
+            self.tick += 1
+            if self.tick % 2 == 0 { self.reportView() }
+        }
+    }
+    // dlmon.py view …: the server keeps the commands in order; a fresh window takes only those of the last 20 seconds
+    func pollView() {
+        get("/view/commands?after=\(max(viewSeq, 0))") { ok, d in
+            guard ok, let d = d, let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { return }
+            DispatchQueue.main.async {
+                let seq = j["seq"] as? Int ?? 0
+                if seq < self.viewSeq { self.viewSeq = 0; return }          // the server started again: count from 0
+                let now = j["now"] as? Double ?? Date().timeIntervalSince1970
+                let first = self.viewSeq < 0
+                for c in (j["cmds"] as? [[String: Any]] ?? []) {
+                    let s = c["seq"] as? Int ?? 0
+                    if !first && s <= self.viewSeq { continue }
+                    if first && now - (c["t"] as? Double ?? 0) > 20 { continue }
+                    let said = ViewCommands.apply(c)
+                    self.said = "view: " + said
+                    self.quiet("/view/done", ["seq": s, "said": said])
+                }
+                self.viewSeq = max(seq, 0)
+            }
+        }
+    }
+    // what the panes show, for dlmon.py view list (sent when it changes, else every ten seconds)
+    func reportView() {
+        guard let d = try? JSONSerialization.data(withJSONObject: ViewCommands.state(), options: [.sortedKeys]),
+              let s = String(data: d, encoding: .utf8) else { return }
+        if s == lastState && Date().timeIntervalSince(stateAt) < 10 { return }
+        lastState = s; stateAt = Date()
+        quiet("/view/state", nil, raw: d)
+    }
+    func quiet(_ path: String, _ body: [String: Any]?, raw: Data? = nil) {
+        var r = URLRequest(url: URL(string: URLBASE + path)!); r.httpMethod = "POST"; r.timeoutInterval = 3
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = raw ?? (try? JSONSerialization.data(withJSONObject: body ?? [:]))
+        URLSession.shared.dataTask(with: r) { _, _, _ in }.resume()
     }
     func ensureServer() {
         get("/health") { ok, _ in
@@ -115,10 +166,16 @@ final class Monitor: ObservableObject {
         guard !done.isEmpty else { said = "no finished rows"; return }
         post("/forget_many", ["ids": done]) { self.said = "\(done.count) finished rows cleared" }
     }
-    // COPY → / MOVE → and back: the selected items of one pane into the other pane's folder, into the one queue
+    // COPY → / MOVE → and back: the selection of the active pane into the folder of the pane to its right (→) or left (←)
+    func transfer(_ mode: String, dir: Int) {
+        let ps = Panes.shared
+        let a = min(max(ps.active, 0), ps.list.count - 1), b = a + dir
+        guard ps.list.indices.contains(b) else { said = "no pane to the \(dir > 0 ? "right" : "left") of pane \(a + 1)"; return }
+        transfer(mode, from: ps.list[a], to: ps.list[b])
+    }
     func transfer(_ mode: String, from: Pane, to: Pane) {
         let items = from.items.filter { from.selection.contains($0.path) }.map { $0.path }
-        guard !items.isEmpty else { said = "select something in the \(from.key) pane first"; return }
+        guard !items.isEmpty else { said = "select something in pane \(from.index + 1) first"; return }
         guard from.path != to.path else { said = "both panes show the same folder"; return }
         if mode == "move" {
             let al = NSAlert(); al.messageText = "Move \(items.count == 1 ? (items[0] as NSString).lastPathComponent : "\(items.count) items") to \(to.path)?"
@@ -330,13 +387,10 @@ struct JobRow: View {
     }
 }
 
-let LEFT = Pane(key: "left", start: NSHomeDirectory())
-let RIGHT = Pane(key: "right", start: FileManager.default.fileExists(atPath: "/Volumes") ? "/Volumes" : NSHomeDirectory())
 
 struct MonitorView: View {
     @ObservedObject var m: Monitor
-    @ObservedObject var left = LEFT
-    @ObservedObject var right = RIGHT
+    @ObservedObject var panes = Panes.shared
 
     var copies: [Job] {
         let all = m.p?.jobs.filter { $0.isCopy } ?? []
@@ -357,7 +411,7 @@ struct MonitorView: View {
             Text("v\(VERSION)").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
                 .onTapGesture { NSWorkspace.shared.open(URL(string: RELEASES)!) }
             TopWord()
-            Button(action: { (NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible })?.performClose(nil) }) {
+            Button(action: { (NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible })?.orderOut(nil) }) {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .medium)).foregroundColor(GREY)
                     .frame(width: 30, height: 30).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Close the window (the app stays ON)")
@@ -365,19 +419,34 @@ struct MonitorView: View {
         }
     }
 
-    var panes: some View {
-        HStack(alignment: .top, spacing: 10) {
-            PaneView(pane: left, title: "LEFT")
-            VStack(spacing: 10) {
-                Spacer()
-                Word(text: "COPY →", on: false) { m.transfer("copy", from: left, to: right) }.accessibilityIdentifier("copy-right")
-                Word(text: "MOVE →", on: false) { m.transfer("move", from: left, to: right) }.accessibilityIdentifier("move-right")
-                Line().frame(width: 60)
-                Word(text: "← COPY", on: false) { m.transfer("copy", from: right, to: left) }.accessibilityIdentifier("copy-left")
-                Word(text: "← MOVE", on: false) { m.transfer("move", from: right, to: left) }.accessibilityIdentifier("move-left")
-                Spacer()
-            }.frame(width: 92)
-            PaneView(pane: right, title: "RIGHT")
+    // the panes as columns; over them ADD PANE | REMOVE PANE and the copy words of the active pane
+    var paneArea: some View {
+        let a = panes.active + 1
+        return VStack(alignment: .leading, spacing: 6) {
+            Flow {
+                Text("PANES").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.trailing, 6)
+                Word(text: "ADD PANE", on: false) { panes.add() }.accessibilityIdentifier("add-pane")
+                Bar_()
+                Word(text: "REMOVE PANE", on: false) {
+                    if panes.list.count > 1 { panes.removeLast() } else { m.said = "one pane stays" }
+                }.accessibilityIdentifier("remove-pane")
+                Text("   FROM PANE \(a):").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.horizontal, 6)
+                Word(text: "← COPY", on: false) { m.transfer("copy", dir: -1) }.accessibilityIdentifier("copy-left")
+                    .help("Copy the selection of pane \(a) into the folder of pane \(a - 1)")
+                Bar_()
+                Word(text: "← MOVE", on: false) { m.transfer("move", dir: -1) }.accessibilityIdentifier("move-left")
+                Bar_()
+                Word(text: "COPY →", on: false) { m.transfer("copy", dir: 1) }.accessibilityIdentifier("copy-right")
+                    .help("Copy the selection of pane \(a) into the folder of pane \(a + 1)")
+                Bar_()
+                Word(text: "MOVE →", on: false) { m.transfer("move", dir: 1) }.accessibilityIdentifier("move-right")
+            }
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(panes.list) { p in
+                    if p.index > 0 { Rectangle().fill(Color(white: 0.2)).frame(width: 1).padding(.horizontal, 4) }
+                    PaneView(pane: p).frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         }.padding(.vertical, 8)
     }
 
@@ -434,7 +503,7 @@ struct MonitorView: View {
             topRow.padding(.top, -10).padding(.trailing, -10)
             Line().padding(.top, 4)
             VSplitView {
-                panes.frame(minHeight: 240, idealHeight: 380)
+                paneArea.frame(minHeight: 300, idealHeight: 520)
                 queue.frame(minHeight: 220, idealHeight: 400)
             }
             Line()
@@ -445,7 +514,8 @@ struct MonitorView: View {
             }.padding(.top, 6)
         }
         .padding(16)
-        .frame(minWidth: 980, idealWidth: 1240, maxWidth: .infinity, minHeight: 640, idealHeight: 900, maxHeight: .infinity)
+        .frame(minWidth: max(980, CGFloat(panes.list.count) * 280 + 40), idealWidth: 1240, maxWidth: .infinity,
+               minHeight: 700, idealHeight: 900, maxHeight: .infinity)
         .background(INK).preferredColorScheme(.dark)
         .onAppear {
             DispatchQueue.main.async {
@@ -459,8 +529,10 @@ let MONITOR = Monitor()
 
 final class Delegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
+    func applicationDidFinishLaunching(_ n: Notification) { Keys.install() }
+    // the ✕ only hides the window, so the Dock, the star and dlmon.py view bring the same one back
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        let ws = s.windows.filter { $0.isMiniaturized || $0.isVisible }
+        let ws = s.windows.filter { $0.title.hasPrefix("Download") && !($0 is NSPanel) }
         if ws.isEmpty { return true }
         for w in ws { w.deminiaturize(nil); w.makeKeyAndOrderFront(nil) }
         s.activate(ignoringOtherApps: true)
