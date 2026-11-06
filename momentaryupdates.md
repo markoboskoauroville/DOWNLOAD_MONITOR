@@ -158,3 +158,12 @@ GitHub, installed.
 "right-click on any pane column give me option to disable some of the columns and also to reorder them. So, new dialog opening up for reordering, enabling disabling certain columns"
 
 **Status:** saved first (6.11.2026).
+**Status (6.11.2026, ~04:05):** v15 built by GitHub (run 42153576474 green, Latest): right-click a column title or a file =
+every column with a tick, "Columns…" opens the dialog (ON/OFF, drag, ▲ ▼, RESET, DONE), one choice for all panes,
+remembered; `dlmon.py view columns [reset|dialog|close|key ...]`.
+
+## 6.11.2026: no title bar until the mouse is at the top; the whole path fits, its end first
+
+"you can further reduce the user interface size by removing the top bar with all these buttons from iOS and macOS: red, yellow, green. When I hover over my parts at the top, then it shows up You need to fit the whole path at the top. Put the three dots for the beginning of the path, and then show as much as you can from the end. The end is the most important; the beginning is not so important"
+
+**Status:** saved first (6.11.2026).
