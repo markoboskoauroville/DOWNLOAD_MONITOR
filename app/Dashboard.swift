@@ -131,9 +131,42 @@ struct DashRow: View {
             }
             Text("·").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY.opacity(0.6)).padding(.horizontal, 4)
                 .accessibilityHidden(true)
-            Word(text: "1 PANE", on: dash.bare, size: 11) { dash.toggleBare() }
-                .help(dash.bare ? "Back to the panes and parts as they were" : "Bare bone: one pane, only its files")
-                .accessibilityIdentifier("dash-bare").accessibilityValue(dash.bare ? "on" : "off")
+            PaneCount()
         }
+    }
+}
+
+// v14 (Marko 6.11.2026: "it needs to show one pane when there is only one pane. I click again, then there will be two
+// panes ... until five. To quickly jump to the number of panes, I just long press and the dialog pops up"): the word
+// says how many panes there are; a click adds one (after 5 it is 1 again), a long press asks for the number.
+struct PaneCount: View {
+    @ObservedObject var panes = Panes.shared
+    @State private var pressed = false
+    var n: Int { panes.list.count }
+    var word: String { n == 1 ? "1 PANE" : "\(n) PANES" }
+    func next() { panes.setCount(n >= Panes.maxPanes ? 1 : n + 1) }
+    func ask() {
+        let al = NSAlert()
+        al.messageText = "How many panes?"
+        al.informativeText = "1 to \(Panes.maxPanes)"
+        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 120, height: 26), pullsDown: false)
+        for k in 1...Panes.maxPanes { pop.addItem(withTitle: "\(k)") }
+        pop.selectItem(at: n - 1)
+        pop.setAccessibilityLabel("Number of panes")
+        al.accessoryView = pop
+        al.addButton(withTitle: "OK"); al.addButton(withTitle: "CANCEL")
+        CloseX.put(on: al)
+        NSApp.activate(ignoringOtherApps: true)
+        if al.runModal() == .alertFirstButtonReturn { panes.setCount(pop.indexOfSelectedItem + 1) }
+    }
+    var body: some View {
+        WordFace(label: Text(word).fixedSize(), pressed: pressed, on: n > 1, size: 11)
+            .onLongPressGesture(minimumDuration: 0.5, pressing: { pressed = $0 }, perform: { ask() })
+            .simultaneousGesture(TapGesture().onEnded { next() })
+            .accessibilityElement(children: .ignore).accessibilityLabel(word).accessibilityAddTraits(.isButton)
+            .accessibilityAction { next() }
+            .accessibilityAction(named: "Choose the number of panes") { ask() }
+            .accessibilityIdentifier("dash-panes-count").accessibilityValue("\(n)")
+            .help("Click: one more pane (after \(Panes.maxPanes), back to 1). Long press: choose the number")
     }
 }

@@ -340,7 +340,15 @@ final class Panes: ObservableObject {
         active = 0
         save()
     }
+    static let maxPanes = 5
+    // v14: the panes button counts 1 to 5 (and round), a long press asks for the number
+    func setCount(_ n: Int) {
+        let n = max(1, min(Panes.maxPanes, n))
+        while list.count > n { removeLast() }
+        while list.count < n { add() }
+    }
     func add(_ folder: String? = nil) {
+        guard list.count < Panes.maxPanes else { return }
         let start = folder ?? (list.indices.contains(active) ? list[active].path : NSHomeDirectory())
         list.append(Pane(index: list.count, start: start))
         equalShare()

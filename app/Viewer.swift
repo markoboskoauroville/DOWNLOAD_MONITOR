@@ -52,7 +52,7 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
         panel.delegate = self
         if panel.isVisible { panel.reloadData() } else { panel.makeKeyAndOrderFront(nil); panel.reloadData() }
         if full && !panel.isInFullScreenMode {
-            let screen = NSApp.windows.first { $0.title.hasPrefix("Download") && $0.isVisible }?.screen ?? NSScreen.main
+            let screen = NSApp.windows.first { isMainWindow($0) && $0.isVisible }?.screen ?? NSScreen.main
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { _ = panel.enterFullScreenMode(screen, withOptions: nil) }
         }
     }
@@ -113,7 +113,7 @@ enum Keys {
     static var monitor: Any?
     static func install() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
-            guard let w = e.window, !(w is QLPreviewPanel), !(w is NSPanel), w.title.hasPrefix("Download") else { return e }
+            guard let w = e.window, !(w is QLPreviewPanel), !(w is NSPanel), isMainWindow(w) else { return e }
             if w.firstResponder is NSText { return e }
             guard let p = Panes.shared.activePane else { return e }
             let m = e.modifierFlags.intersection([.command, .option, .control])
@@ -140,7 +140,7 @@ enum Keys {
 enum ViewCommands {
     static func front() {
         NSApp.activate(ignoringOtherApps: true)
-        if let w = NSApp.windows.first(where: { $0.title.hasPrefix("Download") && !($0 is NSPanel) }) {
+        if let w = NSApp.windows.first(where: { isMainWindow($0) && !($0 is NSPanel) }) {
             w.deminiaturize(nil); w.makeKeyAndOrderFront(nil)
         } else {
             // the window was closed: opening the running app again makes SwiftUI give it a new one
@@ -216,6 +216,9 @@ enum ViewCommands {
             let w = (c["widths"] as? [Double]) ?? []
             if w.count == ps.list.count && w.allSatisfy({ $0 > 0 }) { ps.setShare(w) } else { ps.equalShare() }
             return "widths " + ps.weights().map { String(format: "%.0f%%", $0 * 100) }.joined(separator: " | ")
+        case "count":
+            ps.setCount((c["count"] as? Int) ?? Int((c["count"] as? Double) ?? Double(ps.list.count)))
+            return "\(ps.list.count) pane\(ps.list.count == 1 ? "" : "s")"
         case "front":
             front(); return "in front"
         case "show", "hide":

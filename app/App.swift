@@ -29,7 +29,7 @@
 import SwiftUI
 import AppKit
 
-let VERSION = 13
+let VERSION = 14
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
@@ -44,6 +44,11 @@ let ORANGE = Color(red: 0xFF/255, green: 0x9F/255, blue: 0x0A/255)
 let INK = Color(red: 0x0B/255, green: 0x0D/255, blue: 0x10/255)
 let RED = Color(red: 0xFF/255, green: 0x5F/255, blue: 0x57/255)
 let BLUE = Color(red: 0x5A/255, green: 0xA0/255, blue: 0xE0/255)
+
+// the main window: found by the name its place is remembered under (the title is the paths now, v14)
+func isMainWindow(_ w: NSWindow) -> Bool {
+    !(w is NSPanel) && (w.frameAutosaveName == "DownloadCopyMoveMain" || w.title.hasPrefix("Download"))
+}
 
 struct Job: Decodable, Identifiable {
     let id: String; let name: String
@@ -263,7 +268,7 @@ struct TopWord: View {
             .onAppear { DispatchQueue.main.async { TopWord.float(onTop) } }
     }
     static func float(_ on: Bool) {
-        for w in NSApp.windows where w.title.hasPrefix("Download") { w.level = on ? .floating : .normal }
+        for w in NSApp.windows where isMainWindow(w) { w.level = on ? .floating : .normal }
     }
 }
 
@@ -553,7 +558,10 @@ struct MonitorView: View {
         .background(INK).preferredColorScheme(.dark)
         .onAppear {
             DispatchQueue.main.async {
-                for w in NSApp.windows where w.title.hasPrefix("Download") { w.setFrameAutosaveName("DownloadCopyMoveMain") }
+                for w in NSApp.windows where isMainWindow(w) {
+                    w.setFrameAutosaveName("DownloadCopyMoveMain")
+                    StatusBar.install(on: w)
+                }
             }
         }
     }
@@ -566,7 +574,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) { Keys.install() }
     // the ✕ only hides the window, so the Dock, the star and dlmon.py view bring the same one back
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        let ws = s.windows.filter { $0.title.hasPrefix("Download") && !($0 is NSPanel) }
+        let ws = s.windows.filter { isMainWindow($0) && !($0 is NSPanel) }
         if ws.isEmpty { return true }
         for w in ws { w.deminiaturize(nil); w.makeKeyAndOrderFront(nil) }
         s.activate(ignoringOtherApps: true)
