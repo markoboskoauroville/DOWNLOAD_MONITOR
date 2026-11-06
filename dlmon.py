@@ -61,6 +61,10 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
     dlmon.py view next | prev           the file after / before in that pane (the preview follows), as Down / Up
     dlmon.py view close                 close the preview
     dlmon.py view list                  what every pane shows: folder, mode, size, selection, the preview
+    dlmon.py view show|hide <part>      a part of the window (v7, the DASHBOARD row): panes, toolbar, nav, path, views,
+                                        status, queue, downloads; or bare (1 PANE)
+    dlmon.py view layout bare|full      bare: one pane, only its files; full: every part (and the panes back from bare)
+    dlmon.py view parts                 each part on or off
 
 Nothing here needs a key. The repo sizes come from the Hub when the network
 is there; a download shows without them too, counting up.
@@ -257,7 +261,7 @@ def app_running():
 def view(args):
     """dlmon.py view ...: a command for the window, through the server (POST /view); the window answers within a second."""
     if not args:
-        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|close|list')
+        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|close|list|show|hide|layout|parts')
     sub, args = args[0], list(args[1:])
     pane = flag(args, '--pane')
     mode = flag(args, '--mode')
@@ -271,6 +275,14 @@ def view(args):
             time.sleep(0.25)
             if http('/view/state').get('age_s') is not None and http('/view/state')['age_s'] < 3:
                 break
+    if sub == 'parts':
+        s = (http('/view/state').get('state') or {}).get('parts')
+        if not s:
+            sys.exit('the window has not reported yet (is Download, Copy and Move (Mantra) open?)')
+        for k in ('panes', 'toolbar', 'nav', 'path', 'views', 'status', 'queue', 'downloads'):
+            print('%-10s %s' % (k, 'on' if s.get(k) else 'off'))
+        print('%-10s %s' % ('bare', 'on (1 PANE)' if s.get('bare') else 'off'))
+        return
     if sub == 'list':
         st = http('/view/state')
         s = st.get('state')
@@ -318,6 +330,14 @@ def view(args):
             sys.exit('dlmon.py view %s <file>' % sub)
         c['file'] = path(args[0])
         c['full'] = not window
+    elif sub in ('show', 'hide'):
+        if len(args) != 1:
+            sys.exit('dlmon.py view %s panes|toolbar|nav|path|views|status|queue|downloads|bare' % sub)
+        c['part'] = args[0]
+    elif sub == 'layout':
+        if not args or args[0] not in ('bare', 'full'):
+            sys.exit('dlmon.py view layout bare|full')
+        c['layout'] = args[0]
     elif sub not in ('close', 'remove', 'front', 'next', 'prev'):
         sys.exit('unknown view command %s' % sub)
     seq = http('/view', c)['seq']

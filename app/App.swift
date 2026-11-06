@@ -21,10 +21,12 @@
 // file's own app, Space = Finder's Quick Look, PREVIEW = one click opens it full screen and ↑ ↓ go through the files
 // (Viewer.swift); dlmon.py view … drives it through the server (POST /view, polled here with /progress).
 // COPY → / MOVE → copy the active pane's selection into the pane to its right, ← COPY / ← MOVE into the one to its left.
+// v7 (6.11.2026, Marko: "Make a top section, let's call it the dashboard. It should be one line, one row, grayed out if
+// it's not active, and green"): the first row is the DASHBOARD, a word per part of the window (Dashboard.swift).
 import SwiftUI
 import AppKit
 
-let VERSION = 6
+let VERSION = 7
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"
@@ -391,6 +393,7 @@ struct JobRow: View {
 struct MonitorView: View {
     @ObservedObject var m: Monitor
     @ObservedObject var panes = Panes.shared
+    @ObservedObject var dash = Dash.shared
 
     var copies: [Job] {
         let all = m.p?.jobs.filter { $0.isCopy } ?? []
@@ -401,13 +404,15 @@ struct MonitorView: View {
 
     var topRow: some View {
         HStack(spacing: 2) {
-            Text("DOWNLOAD, COPY AND MOVE").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white).padding(.trailing, 8).fixedSize()
+            Text("DOWNLOAD, COPY AND MOVE").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(.white).padding(.trailing, 6).fixedSize()
             Word(text: "ON", on: true) {}.help("Download, Copy and Move runs").accessibilityIdentifier("on")
             Bar_()
             Word(text: "OFF", on: false) { DispatchQueue.main.async { NSApp.terminate(nil) } }
                 .help("Quit it; the server at 8833 stops too. A copy or move running goes on (PAUSE stops it)")
                 .accessibilityIdentifier("off")
-            Spacer()
+            Spacer(minLength: 10)
+            DashRow()
+            Spacer(minLength: 10)
             Text("v\(VERSION)").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
                 .onTapGesture { NSWorkspace.shared.open(URL(string: RELEASES)!) }
             TopWord()
@@ -423,6 +428,16 @@ struct MonitorView: View {
     var paneArea: some View {
         let a = panes.active + 1
         return VStack(alignment: .leading, spacing: 6) {
+            if dash.shown("toolbar") { toolbar(a) }
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(panes.list) { p in
+                    if p.index > 0 { Rectangle().fill(Color(white: 0.2)).frame(width: 1).padding(.horizontal, 4) }
+                    PaneView(pane: p).frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }.padding(.vertical, 8)
+    }
+    func toolbar(_ a: Int) -> some View {
             Flow {
                 Text("PANES").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.trailing, 6)
                 Word(text: "ADD PANE", on: false) { panes.add() }.accessibilityIdentifier("add-pane")
@@ -441,19 +456,12 @@ struct MonitorView: View {
                 Bar_()
                 Word(text: "MOVE →", on: false) { m.transfer("move", dir: 1) }.accessibilityIdentifier("move-right")
             }
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(panes.list) { p in
-                    if p.index > 0 { Rectangle().fill(Color(white: 0.2)).frame(width: 1).padding(.horizontal, 4) }
-                    PaneView(pane: p).frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        }.padding(.vertical, 8)
     }
 
     var queue: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text("THE QUEUE · ONE COPY OR MOVE AT A TIME").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
+                Text(dash.shown("queue") ? "THE QUEUE · ONE COPY OR MOVE AT A TIME" : "DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
                 Spacer()
                 if let p = m.p, m.up {
                     Text(String(format: "%.1f MB/s", p.speed_mbit / 8) + (p.last_eta_at.map { "  ·  all ready at \($0)" } ?? ""))
@@ -479,13 +487,15 @@ struct MonitorView: View {
                 }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(copies) { j in CopyRow(m: m, j: j); Line() }
-                        if copies.isEmpty {
+                        if dash.shown("queue") { ForEach(copies) { j in CopyRow(m: m, j: j); Line() } }
+                        if copies.isEmpty && dash.shown("queue") {
                             Text("Nothing in the queue. Select in one pane, then COPY → or MOVE →; or dlmon.py copy / move from any session.")
                                 .font(.system(size: 12)).foregroundColor(GREY).padding(.vertical, 10).fixedSize(horizontal: false, vertical: true)
                         }
-                        if !downloads.isEmpty {
-                            Text("DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.top, 14)
+                        if !downloads.isEmpty && dash.shown("downloads") {
+                            if dash.shown("queue") {
+                                Text("DOWNLOADS").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).padding(.top, 14)
+                            }
                             ForEach(downloads) { j in JobRow(m: m, j: j); Line() }
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -498,24 +508,39 @@ struct MonitorView: View {
         }.padding(.top, 8)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            topRow.padding(.top, -10).padding(.trailing, -10)
-            Line().padding(.top, 4)
+    var showQueue: Bool { dash.shown("queue") || dash.shown("downloads") }
+    // what the DASHBOARD shows: the panes over the queue (a divider between them to drag), or one of them alone
+    @ViewBuilder var parts: some View {
+        if dash.shown("panes") && showQueue {
             VSplitView {
                 paneArea.frame(minHeight: 340, idealHeight: 600)
                 queue.frame(minHeight: 160, idealHeight: 260)
             }
-            Line()
-            HStack {
+        } else if dash.shown("panes") {
+            paneArea.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if showQueue {
+            queue.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Every part is hidden: turn one on in the dashboard above.").font(.system(size: 12)).foregroundColor(GREY)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            topRow.padding(.top, -10).padding(.trailing, -10)
+            Line().padding(.top, 4)
+            parts
+            if dash.shown("status") { Line() }
+            if dash.shown("status") { HStack {
                 Text(m.said.isEmpty ? "dlmon.py copy / move / add / hf from any session puts a line here" : m.said)
                     .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
                 Spacer()
-            }.padding(.top, 6)
+            }.padding(.top, 6) }
         }
         .padding(16)
         .frame(minWidth: max(980, CGFloat(panes.list.count) * 280 + 40), idealWidth: 1240, maxWidth: .infinity,
-               minHeight: 700, idealHeight: 900, maxHeight: .infinity)
+               minHeight: dash.shown("panes") && showQueue ? 700 : 360, idealHeight: 900, maxHeight: .infinity)
         .background(INK).preferredColorScheme(.dark)
         .onAppear {
             DispatchQueue.main.async {

@@ -346,6 +346,7 @@ struct PaneView: View {
     @ObservedObject var panes = Panes.shared
     @ObservedObject var sizer = Sizer.shared
     @ObservedObject var durs = Durations.shared
+    @ObservedObject var dash = Dash.shared
     var n: Int { pane.index + 1 }
     var isActive: Bool { panes.active == pane.index }
 
@@ -363,51 +364,66 @@ struct PaneView: View {
         }
     }
 
+    var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Button(action: { panes.active = pane.index }) { Text("PANE \(n)").fixedSize() }
+                .buttonStyle(WordStyle(on: isActive, size: 11))
+                .help("The active pane: COPY → and MOVE → start here").accessibilityLabel("Pane \(n)")
+                .accessibilityIdentifier("pane-\(n)").accessibilityValue(isActive ? "active" : "")
+            Spacer(minLength: 8)
+            Text(pane.free).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize()
+        }
+    }
+    var nav: some View {
+        Flow {
+            Word(text: "BACK", on: false) { pane.goBack() }.accessibilityIdentifier("back-\(n)")
+            Bar_()
+            Word(text: "UP", on: false) { pane.up() }.accessibilityIdentifier("up-\(n)")
+            Bar_()
+            Word(text: "HOME", on: false) { pane.go(NSHomeDirectory()) }.accessibilityIdentifier("home-\(n)")
+            Bar_()
+            Word(text: "VOLUMES", on: false) { pane.go("/Volumes") }.accessibilityIdentifier("volumes-\(n)")
+            Bar_()
+            Word(text: "HIDDEN", on: pane.showHidden) { pane.showHidden.toggle(); pane.load() }.accessibilityIdentifier("hidden-\(n)")
+        }
+    }
+    var views: some View {
+        Flow {
+            Word(text: "ICONS", on: pane.mode == "icons") { pane.mode = "icons" }.accessibilityIdentifier("icons-\(n)")
+            Bar_()
+            Word(text: "LIST", on: pane.mode == "list") { pane.mode = "list" }.accessibilityIdentifier("list-\(n)")
+            Bar_()
+            Word(text: "PREVIEW", on: pane.preview) { pane.preview.toggle() }.accessibilityIdentifier("preview-\(n)")
+                .help("On: one click on a file opens it full screen, ↑ ↓ go to the file before and after, Escape closes")
+        }
+    }
+    var slider: some View {
+        HStack(spacing: 8) {
+            Text("SIZE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
+            Slider(value: $pane.iconSize, in: 48...512).controlSize(.small)
+                .accessibilityLabel("Icon size").accessibilityIdentifier("size-\(n)").accessibilityValue("\(Int(pane.iconSize))")
+            Text("\(Int(pane.iconSize))").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).frame(width: 34, alignment: .trailing)
+        }
+    }
+    var footer: some View {
+        Text(pane.selection.isEmpty ? "\(pane.items.count) items · double click opens · Space previews"
+             : "\(pane.selection.count) selected · \(bytes(pane.selectedBytes)) · Space previews")
+            .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
+    }
+    // every part of the pane is on the DASHBOARD (v7): NAV (the PANE n line and BACK … HIDDEN), PATH, VIEWS, STATUS
     var body: some View {
         let rows = pane.rows
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Button(action: { panes.active = pane.index }) { Text("PANE \(n)").fixedSize() }
-                    .buttonStyle(WordStyle(on: isActive, size: 11))
-                    .help("The active pane: COPY → and MOVE → start here").accessibilityLabel("Pane \(n)")
-                    .accessibilityIdentifier("pane-\(n)").accessibilityValue(isActive ? "active" : "")
-                Spacer(minLength: 8)
-                Text(pane.free).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize()
-            }
-            Flow {
-                Word(text: "BACK", on: false) { pane.goBack() }.accessibilityIdentifier("back-\(n)")
-                Bar_()
-                Word(text: "UP", on: false) { pane.up() }.accessibilityIdentifier("up-\(n)")
-                Bar_()
-                Word(text: "HOME", on: false) { pane.go(NSHomeDirectory()) }.accessibilityIdentifier("home-\(n)")
-                Bar_()
-                Word(text: "VOLUMES", on: false) { pane.go("/Volumes") }.accessibilityIdentifier("volumes-\(n)")
-                Bar_()
-                Word(text: "HIDDEN", on: pane.showHidden) { pane.showHidden.toggle(); pane.load() }.accessibilityIdentifier("hidden-\(n)")
-            }
-            crumbs
-            Flow {
-                Word(text: "ICONS", on: pane.mode == "icons") { pane.mode = "icons" }.accessibilityIdentifier("icons-\(n)")
-                Bar_()
-                Word(text: "LIST", on: pane.mode == "list") { pane.mode = "list" }.accessibilityIdentifier("list-\(n)")
-                Bar_()
-                Word(text: "PREVIEW", on: pane.preview) { pane.preview.toggle() }.accessibilityIdentifier("preview-\(n)")
-                    .help("On: one click on a file opens it full screen, ↑ ↓ go to the file before and after, Escape closes")
-            }
+            if dash.shown("nav") { header; nav }
+            if dash.shown("path") { crumbs }
+            if dash.shown("views") { views }
             if pane.mode == "icons" {
-                HStack(spacing: 8) {
-                    Text("SIZE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(GREY).fixedSize()
-                    Slider(value: $pane.iconSize, in: 48...512).controlSize(.small)
-                        .accessibilityLabel("Icon size").accessibilityIdentifier("size-\(n)").accessibilityValue("\(Int(pane.iconSize))")
-                    Text("\(Int(pane.iconSize))").font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).frame(width: 34, alignment: .trailing)
-                }
+                if dash.shown("views") { slider }
                 IconsView(pane: pane, rows: rows)
             } else {
                 ListView(pane: pane, rows: rows)
             }
-            Text(pane.selection.isEmpty ? "\(pane.items.count) items · double click opens · Space previews"
-                 : "\(pane.selection.count) selected · \(bytes(pane.selectedBytes)) · Space previews")
-                .font(.system(size: 11, design: .monospaced)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
+            if dash.shown("status") { footer }
         }
         .padding(.horizontal, 6)
         .onChange(of: pane.selection) { _ in pane.selectionChanged() }

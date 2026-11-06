@@ -188,6 +188,22 @@ enum ViewCommands {
             return p.selectedFile.map { "now " + $0 } ?? "no file"
         case "front":
             front(); return "in front"
+        case "show", "hide":
+            let name = c["part"] as? String ?? ""
+            let on = c["action"] as? String == "show"
+            if ["bare", "1pane", "onepane"].contains(name.lowercased().replacingOccurrences(of: " ", with: "")) {
+                if on != Dash.shared.bare { Dash.shared.toggleBare() }
+                return "1 PANE \(Dash.shared.bare ? "on" : "off")"
+            }
+            guard let k = Dash.key(name) else { return "no part \(name): " + Dash.parts.map { $0.key }.joined(separator: ", ") + ", bare" }
+            Dash.shared.set(k, on)
+            return "\(k) \(on ? "shown" : "hidden")"
+        case "layout":
+            switch (c["layout"] as? String ?? "").lowercased() {
+            case "bare", "1pane", "one": if !Dash.shared.bare { Dash.shared.enterBare() }; return "layout bare: one pane"
+            case "full", "all": Dash.shared.full(); return "layout full: every part shown"
+            default: return "layout bare | full"
+            }
         default:
             return "unknown view action"
         }
@@ -197,6 +213,6 @@ enum ViewCommands {
         return ["panes": ps.list.map { $0.state() }, "active": ps.active + 1,
                 "preview": ["open": QL.shared.visible, "full": QL.shared.panel?.isInFullScreenMode ?? false,
                             "file": QL.shared.visible ? (QL.shared.file ?? "") : ""] as [String: Any],
-                "version": VERSION]
+                "parts": Dash.shared.state(), "version": VERSION]
     }
 }
