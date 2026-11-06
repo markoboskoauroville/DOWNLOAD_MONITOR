@@ -487,9 +487,9 @@ struct ListView: View {
         return Word(text: label, on: on, size: 10) { pane.sortBy(key) }
             .accessibilityIdentifier("sort-\(pane.index + 1)-\(key)")
     }
-    // the columns that fit: NAME keeps 200 pt, then SIZE and TIME, then by importance for media work
+    // the columns that fit: NAME keeps 300 pt, then SIZE and TIME, then by importance for media work
     static func columns(_ w: CGFloat) -> Set<String> {
-        var room = w - 200 - 74 - 58 - 40
+        var room = w - 300 - 74 - 58 - 40
         var on = Set<String>()
         for (k, need) in [("res", 92.0), ("codec", 112.0), ("fps", 52.0), ("rate", 84.0), ("date", 120.0), ("kind", 100.0)] as [(String, CGFloat)] {
             if room >= need { on.insert(k); room -= need }
@@ -539,16 +539,9 @@ struct ListRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
         HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
-                    Text(r.name).font(.system(size: 13)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true)
-                }
-                // the details line: every fact MediaInfo gave, wrapped, never cut
-                if let m = r.media, !m.line.isEmpty {
-                    Text(m.line).font(.system(size: 11, design: .monospaced)).foregroundColor(Color(white: 0.62))
-                        .padding(.leading, 22).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                }
+            HStack(alignment: .top, spacing: 6) {
+                Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
+                Text(r.name).font(.system(size: 13)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, alignment: .leading)
             Text(r.sizeText).font(.system(size: 12, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY)
                 .frame(width: 74, alignment: .trailing)
@@ -575,6 +568,11 @@ struct ListRow: View {
             }
             Text(r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…")
                 .font(.system(size: 12, design: .monospaced)).foregroundColor(GREY).frame(width: 58, alignment: .trailing)
+        }
+        // the details line, the whole width of the pane: every fact MediaInfo gave, wrapped, never cut
+        if let m = r.media, !m.line.isEmpty {
+            Text(m.line).font(.system(size: 11, design: .monospaced)).foregroundColor(Color(white: 0.62))
+                .padding(.leading, 22).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
         }
         if let t = report { ReportView(text: t) }
         }
