@@ -113,3 +113,9 @@ DEPTH · COLOUR · SCAN · AUDIO · TIMECODE · WRITTEN BY · TRACKS · KIND · 
 media column empty for the whole folder left out, every title sorts. In the preview ↑ ↓ = file, ← → = the pane at the
 left / right plays its file; a click in another pane takes the preview there (`dlmon.py view left|right`). Checked by
 window captures (two panes, one pane wide) and the jump from Python. Marko to try ← → by hand in the full-screen preview.
+
+## 6.11.2026 (~04:00): solo on the DASHBOARD
+
+"please add one more button at the top of all the pins. Call it Barre. It means only pins are left. Also, one trick: second press on any part of the interface switcher dashboard. It's actually soloing that part. So we have solo in that sense. You don't need to build Barre because Barre can be anything. First press is disabling that part. Second press is soloing that part"
+
+**Status:** saved first (6.11.2026). Read as: "pins" = panes, "Barre" = bare; no new button, solo of PANES is the bare one.
