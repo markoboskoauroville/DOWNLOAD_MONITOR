@@ -23,10 +23,13 @@
 // COPY → / MOVE → copy the active pane's selection into the pane to its right, ← COPY / ← MOVE into the one to its left.
 // v7 (6.11.2026, Marko: "Make a top section, let's call it the dashboard. It should be one line, one row, grayed out if
 // it's not active, and green"): the first row is the DASHBOARD, a word per part of the window (Dashboard.swift).
+// v8 (6.11.2026, Marko: "I need all media details. Find the repository media info and let it read all possible media
+// info inside the file. In list view, I can see all this info for each file."): MediaArea's MediaInfo inside the app
+// (MediaInfo.swift): a details line under every media file, CODEC RES FPS BIT RATE columns, INFO | FULL = the whole report.
 import SwiftUI
 import AppKit
 
-let VERSION = 7
+let VERSION = 8
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"

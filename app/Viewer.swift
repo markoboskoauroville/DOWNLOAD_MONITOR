@@ -188,6 +188,14 @@ enum ViewCommands {
             return p.selectedFile.map { "now " + $0 } ?? "no file"
         case "front":
             front(); return "in front"
+        case "info":
+            // INFO (v8): on = the MediaInfo report under every media line, full = every field, off = the details line only
+            let v = (c["info"] as? String ?? "on").lowercased()
+            ps.pick(n).forEach { p in
+                p.info = v != "off"; p.infoFull = v == "full"
+                if p.info { p.mode = "list" }
+            }
+            return "info \(v)" + (Media.binary == nil ? " (no mediainfo found)" : " (\(Media.binary!))")
         case "show", "hide":
             let name = c["part"] as? String ?? ""
             let on = c["action"] as? String == "show"

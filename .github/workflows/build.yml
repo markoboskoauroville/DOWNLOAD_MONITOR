@@ -16,6 +16,19 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: MediaInfo inside the app (v8, MediaArea's own Mac command line)
+        run: |
+          MI=26.05
+          curl -fsSL -o mi.dmg "https://mediaarea.net/download/binary/mediainfo/$MI/MediaInfo_CLI_${MI}_Mac.dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint /tmp/mi mi.dmg
+          mkdir -p vendor
+          B=$(find /tmp/mi -type f -name mediainfo -perm -u+x | head -1)
+          if [ -z "$B" ]; then
+            P=$(find /tmp/mi -name '*.pkg' | head -1); pkgutil --expand-full "$P" /tmp/mipkg
+            B=$(find /tmp/mipkg -type f -name mediainfo -perm -u+x | head -1)
+          fi
+          cp "$B" vendor/mediainfo; hdiutil detach /tmp/mi
+          file vendor/mediainfo; otool -L vendor/mediainfo; vendor/mediainfo --Version
       - name: Build
         run: SIGN=- NO_INSTALL=1 ./build.sh
       - name: Pack

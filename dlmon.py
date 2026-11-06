@@ -65,6 +65,8 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
                                         status, queue, downloads; or bare (1 PANE)
     dlmon.py view layout bare|full      bare: one pane, only its files; full: every part (and the panes back from bare)
     dlmon.py view parts                 each part on or off
+    dlmon.py view info on|off|full [--pane N]   INFO (v8): the whole MediaInfo report under every video, sound and
+                                        picture in LIST (full: every field, mediainfo --Full); off: the details line only
 
 Nothing here needs a key. The repo sizes come from the Hub when the network
 is there; a download shows without them too, counting up.
@@ -261,7 +263,7 @@ def app_running():
 def view(args):
     """dlmon.py view ...: a command for the window, through the server (POST /view); the window answers within a second."""
     if not args:
-        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|close|list|show|hide|layout|parts')
+        sys.exit('dlmon.py view open|add|remove|go|mode|size|previewmode|select|preview|next|prev|close|list|show|hide|layout|parts|info')
     sub, args = args[0], list(args[1:])
     pane = flag(args, '--pane')
     mode = flag(args, '--mode')
@@ -290,9 +292,9 @@ def view(args):
             sys.exit('the window has not reported yet (is Download, Copy and Move (Mantra) open?)')
         for p in s['panes']:
             mark = '*' if p['pane'] == s['active'] else ' '
-            print('%s pane %d  %-5s%s%s  %d items  %s' % (mark, p['pane'], p['mode'].upper(),
+            print('%s pane %d  %-5s%s%s%s  %d items  %s' % (mark, p['pane'], p['mode'].upper(),
                   ('  icons %d' % p['icon_size']) if p['mode'] == 'icons' else '', '  PREVIEW' if p['preview'] else '',
-                  p['items'], p['path']))
+                  ('  INFO %s' % p['info'].upper()) if p.get('info', 'off') != 'off' else '', p['items'], p['path']))
             for f in p['selected'][:20]:
                 print('        selected: %s' % f)
         pv = s.get('preview') or {}
@@ -330,6 +332,10 @@ def view(args):
             sys.exit('dlmon.py view %s <file>' % sub)
         c['file'] = path(args[0])
         c['full'] = not window
+    elif sub == 'info':
+        if not args or args[0] not in ('on', 'off', 'full'):
+            sys.exit('dlmon.py view info on|off|full [--pane N]')
+        c['info'] = args[0]
     elif sub in ('show', 'hide'):
         if len(args) != 1:
             sys.exit('dlmon.py view %s panes|toolbar|nav|path|views|status|queue|downloads|bare' % sub)

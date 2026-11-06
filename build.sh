@@ -37,6 +37,11 @@ cat > "$APP/Contents/Info.plist" <<PL
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PL
+# MediaInfo (v8): the workflow puts MediaArea's mediainfo in vendor/; it goes inside, signed before the app
+if [ -x vendor/mediainfo ]; then
+  cp vendor/mediainfo "$APP/Contents/Resources/mediainfo"
+  codesign --force -s "${SIGN:-Mantra Apps}" "$APP/Contents/Resources/mediainfo"
+fi
 codesign --force -s "${SIGN:-Mantra Apps}" "$APP"
 [ -n "$NO_INSTALL" ] && { echo "built $APP (v$V)"; exit 0; }
 rm -rf "/Applications/$NAME.app"; cp -R "$APP" /Applications/
