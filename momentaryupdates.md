@@ -167,3 +167,12 @@ remembered; `dlmon.py view columns [reset|dialog|close|key ...]`.
 "you can further reduce the user interface size by removing the top bar with all these buttons from iOS and macOS: red, yellow, green. When I hover over my parts at the top, then it shows up You need to fit the whole path at the top. Put the three dots for the beginning of the path, and then show as much as you can from the end. The end is the most important; the beginning is not so important"
 
 **Status:** saved first (6.11.2026).
+**Status (6.11.2026, ~04:10):** v16 built (run 42153732774 green, Latest): no title bar, the red/yellow/green buttons appear while the
+mouse is in the top 30 pt, the top line drags the window; the paths line fits every pane's full path, each cut at its
+beginning with … and the end kept (short paths keep their room).
+
+## 6.11.2026: the preview never has black bars
+
+"please, when you invite preview, it can be in full screen, but never with the black bars on the left and right. Black bars are not an option. Only if I click on this preview window as it is in the macOS full screen, then it goes with these black bars. But I don't want to see black bars when I right-click on any file"
+
+**Status:** saved first (6.11.2026).
