@@ -58,6 +58,7 @@ it, run a Hugging Face download that shows there. From any chat, any folder.
     dlmon.py view select <file>         select it (in the pane showing its folder, else the active pane goes there)
     dlmon.py view preview <file> [--window]   Finder's Quick Look on it, full screen (--window: the small panel);
                                         Up / Down in it go to the file before / after, Escape closes
+    dlmon.py view next | prev           the file after / before in that pane (the preview follows), as Down / Up
     dlmon.py view close                 close the preview
     dlmon.py view list                  what every pane shows: folder, mode, size, selection, the preview
 
@@ -317,7 +318,7 @@ def view(args):
             sys.exit('dlmon.py view %s <file>' % sub)
         c['file'] = path(args[0])
         c['full'] = not window
-    elif sub not in ('close', 'remove', 'front'):
+    elif sub not in ('close', 'remove', 'front', 'next', 'prev'):
         sys.exit('unknown view command %s' % sub)
     seq = http('/view', c)['seq']
     for _ in range(40):

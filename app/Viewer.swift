@@ -56,10 +56,14 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { _ = panel.enterFullScreenMode(screen, withOptions: nil) }
         }
     }
+    // out of full screen first; the panel comes back at the end of that animation, so it is put away after it
+    // (measured 6.11.2026: an orderOut right after exitFullScreenMode left the small panel playing)
     func close() {
         guard let panel = panel, panel.isVisible else { return }
-        if panel.isInFullScreenMode { panel.exitFullScreenMode(options: nil) }
-        panel.orderOut(nil)
+        if panel.isInFullScreenMode {
+            panel.exitFullScreenMode(options: nil)
+            for t in [0.0, 0.4, 0.9] { DispatchQueue.main.asyncAfter(deadline: .now() + t) { panel.orderOut(nil) } }
+        } else { panel.orderOut(nil) }
     }
     func toggle(_ p: Pane) { if visible { close() } else { show(p, full: p.preview) } }
     // the pane's selection moved (a click, an arrow, Python): the panel shows the new file
@@ -177,6 +181,11 @@ enum ViewCommands {
             return "selected \(file)"
         case "close":
             QL.shared.close(); return "preview closed"
+        case "next", "prev":
+            guard let p = QL.shared.visible ? QL.shared.pane : ps.activePane else { return "no pane" }
+            p.move(c["action"] as? String == "next" ? 1 : -1, filesOnly: true)
+            QL.shared.follow(p)
+            return p.selectedFile.map { "now " + $0 } ?? "no file"
         case "front":
             front(); return "in front"
         default:
