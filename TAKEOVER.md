@@ -1,5 +1,17 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
+**State 6.11.2026: v6, the file viewer.** `app/Panes.swift`: Pane (folder, items, selection, mode icons|list, iconSize,
+preview, sortKey/ascending, all in UserDefaults `pane.<i>.*`), Panes (the list, `panes.paths`, active), Sizer, Durations
+(AVURLAsset), PaneView, ListView/ListRow (own sortable titles, wrapping names), IconsView/IconCell, Flow (wrapping rows).
+`app/Viewer.swift`: Thumbs (QLThumbnailGenerator), QL (QLPreviewPanel data source and delegate, set directly on the
+shared panel; one item, the arrows move the pane), Keys (local key monitor: Space, arrows in ICONS, ⌘↓ ⌘↑),
+ViewCommands (apply / state). `app/App.swift`: Monitor.pollView / reportView, the panes row, transfer(dir:). Server:
+`/view`, `/view/commands`, `/view/done`, `/view/state` in monitor.py; `dlmon.py view …`. Built by GitHub (run
+42142202400 green), release v6 Latest, installed and signed "Mantra Apps"; left showing HIR_96 | HIR_98
+ALL_VERSIONS_2026-11-05 in LIST. Install: `gh release download v6 -p app.zip`, ditto into /Applications, `codesign
+--force -s "Mantra Apps"`; quit the running copy first with `osascript -e 'tell application id
+"community.auroville.downloadmonitor" to quit'` when `dlmon.py queue` shows nothing running.
+
 **State 5.11.2026 evening: v5, Download, Copy and Move (Mantra)** (`/Applications/Download, Copy and Move (Mantra).app`,
 executable DownloadCopyMove, bundle id unchanged community.auroville.downloadmonitor). Copy/move queue: `copier.py`
 (engine, detached, one at a time), `monitor.py` (POST /copy, control pause/start/cancel for copy jobs, ensure_copier on

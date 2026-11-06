@@ -72,3 +72,13 @@ panes and the buttons.
 "now there is a chance to update my application downloader copier to also be a file viewer, and the same command can be executed inside my application. You're going to close Pathfinder. Update my application, download that and copier, and it can open any number of folders at the same time, creating many vertical windows. Now, for this case, only two, and I can double-click any file, and it will open up in its viewer now you can create this code so you can through the Python API control it. Open any folder and list the folders I need to watch with multiple views: icon view and list view. If I'm in icon view, I have a slider at the top to enlarge icons, or a list view with all details. Please update it so in the future it's easy for me and for you to show me the folders I need to check, and then I'll check everything and let you know what's going on please also use the previewer mechanism from the Mac's itself. There will be a preview mode. A preview mode means that when I click on one file, the preview will open in full screen. When it's finished, I just press the down arrow or up arrow to go through the three files, and it should play those files. Then I press Escape, and the preview window will exit. That's exactly the same preview window in Finder, which is activated with the spacebar"
 
 **Status:** saved first (6.11.2026). Path Finder closed.
+**Status (6.11.2026, ~02:15):** v6 built by GitHub (run 42142202400, green; release v6 Latest), installed and signed
+"Mantra Apps", running. Any number of panes as columns (ADD PANE | REMOVE PANE), each with ICONS (real thumbnails, a
+frame of every video, SIZE slider) | LIST (NAME SIZE KIND MODIFIED TIME, sortable by a click on the title, names wrap)
+| PREVIEW; double click opens a folder or the file in its app; Space = Finder's Quick Look; PREVIEW on: one click opens
+it full screen, ↓ ↑ go through the files of that pane and it plays, Escape closes. COPY → / MOVE → from the active pane
+to the one at its right (← to the left). Python: `dlmon.py view open|add|go|mode|size|previewmode|select|preview|next|
+prev|close|list`. Checked by window captures: LIST and ICONS of HIR_96 | HIR_98, preview full screen and next/close
+from Python. Left showing HIR_96 (left) and HIR_98 (right) in LIST. Marko to try the arrow keys and Escape by hand in
+the full-screen preview.
+

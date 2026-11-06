@@ -1,8 +1,55 @@
 # DOWNLOAD_MONITOR — Download, Copy and Move (Mantra), once the Download Monitor
 
 **Every download, copy and move on this Mac, each with its own line, in `/Applications/Download, Copy and Move
-(Mantra).app`; two panes, left and right, with the size beside every folder; ONE queue for copies and moves, one at a
-time. The server is still http://127.0.0.1:8833 and every dlmon.py command still works.**
+(Mantra).app`; since v6 also a file viewer: any number of panes as columns, ICONS with real thumbnails or LIST with all
+details, Finder's Quick Look full screen, driven from Python (`dlmon.py view`); the size beside every folder; ONE queue
+for copies and moves, one at a time. The server is still http://127.0.0.1:8833 and every dlmon.py command still works.**
+
+## The file viewer: any number of panes, ICONS | LIST, Quick Look, driven from Python (v6, 6.11.2026)
+
+Marko, 6.11.2026: *"update my application, download that and copier, and it can open any number of folders at the same
+time, creating many vertical windows ... I can double-click any file, and it will open up in its viewer ... through the
+Python API control it ... icon view and list view. If I'm in icon view, I have a slider at the top to enlarge icons, or
+a list view with all details ... use the previewer mechanism from the Mac's itself ... when I click on one file, the
+preview will open in full screen ... I just press the down arrow or up arrow to go through the three files, and it
+should play those files. Then I press Escape"*
+
+- **Panes as columns**, as many as wanted (two by default; ADD PANE | REMOVE PANE over them), each remembered with its
+  folder, view, icon size, sort and PREVIEW. Each pane: PANE n (green = the active one) and the free space, BACK | UP |
+  HOME | VOLUMES | HIDDEN, the path with every folder a button (grey > between), ICONS | LIST | PREVIEW.
+- **ICONS**: real thumbnails (QuickLookThumbnailing; a video shows a frame), name, size and duration under each, the
+  SIZE slider (48–512) on top. Click selects, ⌘-click adds, ⇧-click a range; ← → ↑ ↓ move.
+- **LIST**: NAME · SIZE (a folder's whole size, measured in the background) · KIND · MODIFIED · TIME (the duration of a
+  video or a sound). Each title is a button: click sorts, again the other way (size, date and time biggest first). The
+  name wraps, nothing is cut; a narrow pane leaves out KIND under 560 pt, then MODIFIED under 460 pt.
+- **Double click**: a folder is entered, a file opens in its own app (NSWorkspace). ⌘↓ opens too, ⌘↑ goes up.
+- **Space** = Finder's Quick Look (QLPreviewPanel) on the selected file; Space or Escape closes it. **PREVIEW** on a
+  pane: one click on a file opens it full screen (after the double-click time, so a double click still opens the app);
+  in the preview ↓ / → go to the next file of that pane and ↑ / ← to the one before, the pane's selection moves with it
+  and the video plays; Escape closes.
+- **Copy and move between panes**: COPY → / MOVE → put the active pane's selection into the folder of the pane to its
+  right, ← COPY / ← MOVE into the one to its left (with two panes: the same as v5). The active pane is the one last
+  clicked; its number is shown as FROM PANE n.
+- Every word is an Accessibility button with an identifier: `add-pane`, `remove-pane`, `copy-right`, `move-right`,
+  `copy-left`, `move-left`, and per pane n: `pane-n`, `back-n`, `up-n`, `home-n`, `volumes-n`, `hidden-n`, `icons-n`,
+  `list-n`, `preview-n`, `size-n` (slider), `sort-n-name|size|kind|date|duration`, `path-n-k`, `item-n-<name>`.
+- ✕ hides the window (the app and the server stay); the Dock, the star or `dlmon.py view` bring the same window back.
+
+```
+dlmon.py view open <folder> [<folder> ...] [--mode icons|list]   the panes become these folders, window in front
+dlmon.py view add <folder> | remove | go <folder> [--pane N]
+dlmon.py view mode icons|list [--pane N]        dlmon.py view size <48..512> [--pane N]
+dlmon.py view previewmode on|off [--pane N]
+dlmon.py view select <file>                     dlmon.py view preview <file> [--window]   (full screen by default)
+dlmon.py view next | prev                       dlmon.py view close
+dlmon.py view list                              what every pane shows, the selection, the preview
+```
+
+How it is wired: `dlmon.py view` posts the command to the server (`POST /view`, kept in order with a number); the window
+polls `GET /view/commands?after=N` twice a second with /progress, applies it (`app/Viewer.swift`, ViewCommands), answers
+`POST /view/done` (dlmon.py prints that answer) and posts what the panes show to `POST /view/state` (`GET /view/state`,
+`dlmon.py view list`). A window that starts takes only the commands of the last 20 seconds. dlmon.py opens the app first
+if it is not running.
 
 ## Copy and move: one queue, one at a time (v5, 5.11.2026)
 

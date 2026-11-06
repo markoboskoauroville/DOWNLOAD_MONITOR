@@ -43,3 +43,15 @@
 - (5.11.2026) **A server-side helper that decides whether to start the copier must skip jobs already finished but not
   yet written down**; first version waited on a finished head and never started the next job.
 - (5.11.2026) To test the window without stopping the server: `pkill -9 -x DownloadCopyMove` (a normal quit sends /quit).
+- (6.11.2026) **A SwiftUI Table on macOS cuts long names** (one line per row, "…"), against never-cut-text: LIST is a
+  List with its own column titles as buttons, and the name `fixedSize(horizontal: false, vertical: true)` wraps.
+- (6.11.2026) **The type checker gives up on a long modifier chain** inside ForEach in a LazyVGrid ("unable to type-check
+  this expression in reasonable time"): build the cell in a function in small `let` steps.
+- (6.11.2026) **QLPreviewPanel full screen**: `enterFullScreenMode(screen, withOptions: nil)` after the panel is shown;
+  to close, `exitFullScreenMode` then `orderOut` again after the exit animation (0.4 s, 0.9 s): an orderOut at once left
+  the small panel playing. With one item in the data source the arrows reach `previewPanel(_:handle:)`, so ↑ ↓ move
+  the pane's selection and `reloadData()` follows. The data source is set directly on the shared panel (no responder
+  chain controller); it works.
+- (6.11.2026) **A pane method called `open` hides Darwin's `open(path, O_EVTONLY)`** inside the class: named openItems.
+- (6.11.2026) **Python to a SwiftUI app without Apple Events**: the server keeps numbered commands, the window polls
+  them, answers each by number, and posts its state; a fresh window takes only the last 20 seconds of commands.
