@@ -29,7 +29,7 @@
 import SwiftUI
 import AppKit
 
-let VERSION = 14
+let VERSION = 15
 let APPNAME = "Download, Copy and Move (Mantra)"
 let RELEASES = "https://github.com/markoboskoauroville/DOWNLOAD_MONITOR/releases/latest"
 let URLBASE = "http://127.0.0.1:8833"

@@ -219,6 +219,14 @@ enum ViewCommands {
         case "count":
             ps.setCount((c["count"] as? Int) ?? Int((c["count"] as? Double) ?? Double(ps.list.count)))
             return "\(ps.list.count) pane\(ps.list.count == 1 ? "" : "s")"
+        case "columns":
+            let pr = ColumnPrefs.shared
+            let keys = c["keys"] as? [String] ?? []
+            if keys == ["reset"] { pr.reset() }
+            else if keys == ["dialog"] { ColumnsDialog.show(); return "the Columns dialog is open" }
+            else if keys == ["close"] { ColumnsDialog.close(); return "the Columns dialog is closed" }
+            else if !keys.isEmpty { pr.set(keys) }
+            return "columns: " + pr.visible().map { $0.key }.joined(separator: " ")
         case "front":
             front(); return "in front"
         case "show", "hide":

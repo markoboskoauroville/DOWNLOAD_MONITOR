@@ -553,6 +553,7 @@ struct FilterBox: View {
 struct ListView: View {
     @ObservedObject var pane: Pane
     @ObservedObject var media = Media.shared
+    @ObservedObject var prefs = ColumnPrefs.shared
     let rows: [Row]
     func head(_ title: String, _ key: String) -> some View {
         let on = pane.sortKey == key
@@ -564,9 +565,10 @@ struct ListView: View {
     func widths() -> (CGFloat, [(LCol, CGFloat)]) {
         let nameW = min(900, max(230, rows.map { textWidth($0.name, NSFont.systemFont(ofSize: 13)) }.max() ?? 0) + 30)
         var out: [(LCol, CGFloat)] = []
-        for c in LCOLS {
+        for c in prefs.visible() {
             let vals = rows.map { c.text($0) }
-            if c.key != "duration" && c.key != "size" && c.key != "date" && c.key != "kind" && vals.allSatisfy({ $0.isEmpty }) { continue }
+            // before Marko chooses his own columns, one empty for the whole folder is left out; once he chooses, it stays
+            if !prefs.custom && c.key != "duration" && c.key != "size" && c.key != "date" && c.key != "kind" && vals.allSatisfy({ $0.isEmpty }) { continue }
             let w = max(textWidth(c.title + " ▲", HEADF) + 14, vals.map { textWidth($0, MONO) }.max() ?? 0)
             out.append((c, w + 4))
         }
@@ -585,11 +587,12 @@ struct ListView: View {
                         }.frame(width: nameW, alignment: .leading)
                         ForEach(cols, id: \.0.key) { c, w in head(c.title, c.key).frame(width: w, alignment: c.right ? .trailing : .leading) }
                     }.padding(.leading, 12).padding(.bottom, 2)
+                    .contentShape(Rectangle()).contextMenu { ColumnMenu() }
                     Line()
                     List(selection: $pane.selection) {
                         ForEach(rows) { r in ListRow(r: r, nameW: nameW, cols: cols).tag(r.path) }
                     }
-                    .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in pane.openItems(sel) })
+                    .contextMenu(forSelectionType: String.self, menu: { _ in ColumnMenu() }, primaryAction: { sel in pane.openItems(sel) })
                     .scrollContentBackground(.hidden).background(Color(white: 0.07))
                     .accessibilityIdentifier("list-of-\(pane.index + 1)")
                 }
