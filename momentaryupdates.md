@@ -119,3 +119,8 @@ window captures (two panes, one pane wide) and the jump from Python. Marko to tr
 "please add one more button at the top of all the pins. Call it Barre. It means only pins are left. Also, one trick: second press on any part of the interface switcher dashboard. It's actually soloing that part. So we have solo in that sense. You don't need to build Barre because Barre can be anything. First press is disabling that part. Second press is soloing that part"
 
 **Status:** saved first (6.11.2026). Read as: "pins" = panes, "Barre" = bare; no new button, solo of PANES is the bare one.
+**Status (6.11.2026, ~04:15):** v11 built by GitHub (run 42152482750, green), installed, signed "Mantra Apps". Each
+DASHBOARD word: first press hides its part, second press SOLOs it (the word reads SOLO …, green; NAV/PATH/VIEWS/
+TOOLBAR/STATUS keep the panes under them), third press brings everything back as it was. No BARE button: SOLO PANES is
+it. `dlmon.py view solo <part>|off` and `view press <part>`. Checked from Python (hide -> solo -> back for PATH, QUEUE,
+VIEWS) and by a window capture (SOLO VIEWS). Marko to try it by hand.

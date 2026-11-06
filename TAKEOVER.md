@@ -1,5 +1,7 @@
 # TAKEOVER: the Download Monitor on a fresh Mac
 
+**v11 (6.11.2026, ~04:15): DASHBOARD solo.** First press hides a part, second solos it, third brings everything back; run 42152482750 green, installed and signed "Mantra Apps", checked by `dlmon.py view press` and a window capture. Marko to try it by hand.
+
 **State 6.11.2026 (later): v7, the DASHBOARD.** `app/Dashboard.swift`: Part, Dash (on/off per part, bare with
 enterBare/leaveBare/full, UserDefaults `dash.*`), DashRow (the words in the first row). PaneView is split into header,
 nav, views, slider, footer, each behind `dash.shown(...)`; MonitorView.parts picks the panes over the queue (VSplitView)
