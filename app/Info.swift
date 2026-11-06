@@ -8,7 +8,9 @@ import AppKit
 final class InfoModel: ObservableObject {
     static let shared = InfoModel()
     @Published var path: String?
-    @Published var created = "", modified = "", size = ""
+    @Published var created = ""
+    @Published var modified = ""
+    @Published var size = ""
     @Published var report: String?
     @Published var full = false { didSet { if let p = path { read(p) } } }
     static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEEE d.M.yyyy HH:mm:ss"; return f }()
