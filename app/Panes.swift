@@ -54,7 +54,7 @@ struct Row: Identifiable, Hashable {
     var media: MediaFacts? = nil
     var live: Live? = nil
     var id: String { path }
-    var shownName: String { live.map { name + "   " + $0.text } ?? name }
+    var shownName: String { live.map { $0.text + "   " + name } ?? name }
     var pixels: Int { (media?.width ?? 0) * (media?.height ?? 0) }
     var sizeText: String { isLink ? "link" : size < 0 ? "…" : bytes(size) }
 }
@@ -704,10 +704,10 @@ struct ListRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             HStack(spacing: 6) {
                 Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
-                Text(r.name).font(.system(size: 13)).foregroundColor(.white).lineLimit(1).fixedSize()
-                if let lv = r.live {
+                if let lv = r.live {      // v23: the amber live text first, at the left, always in view
                     Text(lv.text).font(.system(size: 13).monospacedDigit()).foregroundColor(AMBER).lineLimit(1).fixedSize()
                 }
+                Text(r.name).font(.system(size: 13)).foregroundColor(.white).lineLimit(1).fixedSize()
             }.frame(width: nameW, alignment: .leading)
             ForEach(cols, id: \.0.key) { c, w in
                 Text(c.text(r)).font(.system(size: 12, design: .monospaced))
