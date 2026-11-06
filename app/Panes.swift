@@ -8,8 +8,7 @@
 // LIST | PREVIEW, and the files: ICONS is a grid of real thumbnails (QuickLookThumbnailing, a video shows a frame) with
 // a size slider; LIST is a table NAME · SIZE (folders measured by Sizer) · KIND · MODIFIED · DURATION, every column
 // sortable. v8 (6.11.2026): every video, sound and picture also gets its MediaInfo facts (MediaInfo.swift): a details
-// line under the name, the columns CODEC · RES · FPS · BIT RATE when the pane is wide enough, and INFO (FULL) opens the
-// whole MediaInfo report under every line. A double click opens a folder, or a file in its own app; Space is Finder's Quick Look (Viewer.swift).
+// column each in LIST (v10: one line per file, the pane scrolls sideways; TIME RES FPS BIT RATE CODEC first). A double click opens a folder, or a file in its own app; Space is Finder's Quick Look (Viewer.swift).
 import SwiftUI
 import AppKit
 import AVFoundation
@@ -108,8 +107,6 @@ final class Pane: ObservableObject, Identifiable {
     @Published var preview: Bool { didSet { UserDefaults.standard.set(preview, forKey: "pane.\(index).preview") } }
     @Published var sortKey: String { didSet { UserDefaults.standard.set(sortKey, forKey: "pane.\(index).sort") } }
     @Published var ascending: Bool { didSet { UserDefaults.standard.set(ascending, forKey: "pane.\(index).asc") } }
-    @Published var info: Bool { didSet { UserDefaults.standard.set(info, forKey: "pane.\(index).info") } }
-    @Published var infoFull: Bool { didSet { UserDefaults.standard.set(infoFull, forKey: "pane.\(index).infofull") } }
     var columns = 1                                         // icons per row in ICONS (for ↑ ↓)
     var anchor: String?                                     // where a shift click starts
     private var back: [String] = []
@@ -127,8 +124,6 @@ final class Pane: ObservableObject, Identifiable {
         preview = d.bool(forKey: "pane.\(index).preview")
         sortKey = d.string(forKey: "pane.\(index).sort") ?? "name"
         ascending = d.object(forKey: "pane.\(index).asc") as? Bool ?? true
-        info = d.bool(forKey: "pane.\(index).info")
-        infoFull = d.bool(forKey: "pane.\(index).infofull")
         load()
         // the sizes are measured again while the pane is open (a copy filling a folder, a file added deep inside)
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.load() }
@@ -205,7 +200,7 @@ final class Pane: ObservableObject, Identifiable {
     // a click on a column title: the same column turns the order round, another sorts by it (sizes, dates and
     // durations biggest and newest first, as Finder does)
     func sortBy(_ key: String) {
-        if sortKey == key { ascending.toggle() } else { sortKey = key; ascending = key == "name" || key == "kind" || key == "codec" }
+        if sortKey == key { ascending.toggle() } else { sortKey = key; ascending = !["size", "date", "duration", "res", "fps", "rate"].contains(key) }
     }
     static func less(_ key: String, _ a: Row, _ b: Row) -> Bool {
         switch key {
@@ -217,7 +212,13 @@ final class Pane: ObservableObject, Identifiable {
         case "res": if a.pixels != b.pixels { return a.pixels < b.pixels }
         case "fps": if (a.media?.fps ?? 0) != (b.media?.fps ?? 0) { return (a.media?.fps ?? 0) < (b.media?.fps ?? 0) }
         case "rate": if (a.media?.bitrate ?? 0) != (b.media?.bitrate ?? 0) { return (a.media?.bitrate ?? 0) < (b.media?.bitrate ?? 0) }
-        default: break
+        case "name": break
+        default:
+            if let c = LCOLS.first(where: { $0.key == key }) {
+                let x = c.text(a), y = c.text(b)
+                if x.isEmpty != y.isEmpty { return y.isEmpty }       // the empty ones last
+                let o = x.localizedStandardCompare(y); if o != .orderedSame { return o == .orderedAscending }
+            }
         }
         return a.name.localizedStandardCompare(b.name) == .orderedAscending
     }
@@ -290,7 +291,6 @@ final class Pane: ObservableObject, Identifiable {
     }
     func state() -> [String: Any] {
         ["pane": index + 1, "path": path, "mode": mode, "icon_size": Int(iconSize), "preview": preview,
-         "info": info ? (infoFull ? "full" : "on") : "off",
          "sort": sortKey + (ascending ? " up" : " down"),
          "items": items.count, "selected": rows.filter { selection.contains($0.path) }.map { $0.path }]
     }
@@ -416,15 +416,6 @@ struct PaneView: View {
             Bar_()
             Word(text: "PREVIEW", on: pane.preview) { pane.preview.toggle() }.accessibilityIdentifier("preview-\(n)")
                 .help("On: one click on a file opens it full screen, ↑ ↓ go to the file before and after, Escape closes")
-            Bar_()
-            Word(text: "INFO", on: pane.info) { pane.info.toggle(); if pane.info { pane.mode = "list" } }
-                .accessibilityIdentifier("info-\(n)")
-                .help("The whole MediaInfo report under every video, sound and picture in LIST")
-            if pane.info {
-                Bar_()
-                Word(text: "FULL", on: pane.infoFull) { pane.infoFull.toggle() }.accessibilityIdentifier("infofull-\(n)")
-                    .help("Every field MediaInfo knows, in every form (mediainfo --Full)")
-            }
         }
     }
     var slider: some View {
@@ -475,8 +466,35 @@ struct CrumbFace<L: View>: View {
     }
 }
 
-// LIST: a column title is a button (click again: the other way round); the name wraps, nothing is cut. A narrow pane
-// leaves out KIND (under 560 pt), then MODIFIED (under 460 pt); a wider window shows them again.
+// LIST (v10, Marko 6.11.2026: "my media info wants to be only in one line, same as the file name without report. I need
+// to have a horizontal scroller to see all this data, but don't break the lines. I want to have each file on one line"
+// and "the most important field is time ... Then resolution, then frame per second, then bitrate, and then codec").
+// Every file is one line, nothing wraps: NAME, then TIME RES FPS BIT RATE CODEC, then SIZE and every other MediaInfo
+// fact, each its own column as wide as its longest value; the pane scrolls sideways to reach them. Every title sorts.
+struct LCol {
+    let key: String; let title: String; let right: Bool; let text: (Row) -> String
+}
+let LCOLS: [LCol] = [
+    LCol(key: "duration", title: "TIME", right: true) { r in r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…" },
+    LCol(key: "res", title: "RES", right: true) { $0.media?.res ?? "" },
+    LCol(key: "fps", title: "FPS", right: true) { $0.media?.fpsText ?? "" },
+    LCol(key: "rate", title: "BIT RATE", right: true) { $0.media?.rateText ?? "" },
+    LCol(key: "codec", title: "CODEC", right: false) { $0.media?.codec ?? "" },
+    LCol(key: "size", title: "SIZE", right: true) { $0.sizeText },
+    LCol(key: "depth", title: "DEPTH", right: false) { $0.media?.depth ?? "" },
+    LCol(key: "colour", title: "COLOUR", right: false) { $0.media?.colour ?? "" },
+    LCol(key: "scan", title: "SCAN", right: false) { $0.media?.scan ?? "" },
+    LCol(key: "audio", title: "AUDIO", right: false) { $0.media?.audio ?? "" },
+    LCol(key: "tc", title: "TIMECODE", right: false) { $0.media?.timecode ?? "" },
+    LCol(key: "writer", title: "WRITTEN BY", right: false) { $0.media?.writer ?? "" },
+    LCol(key: "tracks", title: "TRACKS", right: false) { $0.media?.tracks ?? "" },
+    LCol(key: "kind", title: "KIND", right: false) { $0.kind },
+    LCol(key: "date", title: "MODIFIED", right: false) { DATEFMT.string(from: $0.mtime) },
+]
+let MONO = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+let HEADF = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
+func textWidth(_ s: String, _ f: NSFont) -> CGFloat { ceil((s as NSString).size(withAttributes: [.font: f]).width) }
+
 struct ListView: View {
     @ObservedObject var pane: Pane
     @ObservedObject var media = Media.shared
@@ -487,94 +505,55 @@ struct ListView: View {
         return Word(text: label, on: on, size: 10) { pane.sortBy(key) }
             .accessibilityIdentifier("sort-\(pane.index + 1)-\(key)")
     }
-    // the columns that fit: NAME keeps 300 pt, then SIZE and TIME, then by importance for media work
-    static func columns(_ w: CGFloat) -> Set<String> {
-        var room = w - 300 - 74 - 58 - 40
-        var on = Set<String>()
-        for (k, need) in [("res", 92.0), ("codec", 112.0), ("fps", 52.0), ("rate", 84.0), ("date", 120.0), ("kind", 100.0)] as [(String, CGFloat)] {
-            if room >= need { on.insert(k); room -= need }
+    // each column as wide as its longest value or its title (with room for ▲); a column empty for every line goes
+    func widths() -> (CGFloat, [(LCol, CGFloat)]) {
+        let nameW = min(900, max(160, rows.map { textWidth($0.name, NSFont.systemFont(ofSize: 13)) }.max() ?? 0) + 30)
+        var out: [(LCol, CGFloat)] = []
+        for c in LCOLS {
+            let vals = rows.map { c.text($0) }
+            if c.key != "duration" && c.key != "size" && c.key != "date" && c.key != "kind" && vals.allSatisfy({ $0.isEmpty }) { continue }
+            let w = max(textWidth(c.title + " ▲", HEADF) + 14, vals.map { textWidth($0, MONO) }.max() ?? 0)
+            out.append((c, w + 4))
         }
-        return on
+        return (nameW, out)
     }
     var body: some View {
+        let (nameW, cols) = widths()
+        let total = nameW + cols.reduce(0) { $0 + $1.1 + 12 } + 40
         GeometryReader { g in
-            let c = ListView.columns(g.size.width)
-            VStack(spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    head("NAME", "name").frame(maxWidth: .infinity, alignment: .leading)
-                    head("SIZE", "size").frame(width: 74, alignment: .trailing)
-                    if c.contains("codec") { head("CODEC", "codec").frame(width: 104, alignment: .leading) }
-                    if c.contains("res") { head("RES", "res").frame(width: 84, alignment: .trailing) }
-                    if c.contains("fps") { head("FPS", "fps").frame(width: 44, alignment: .trailing) }
-                    if c.contains("rate") { head("BIT RATE", "rate").frame(width: 76, alignment: .trailing) }
-                    if c.contains("kind") { head("KIND", "kind").frame(width: 92, alignment: .leading) }
-                    if c.contains("date") { head("MODIFIED", "date").frame(width: 112, alignment: .leading) }
-                    head("TIME", "duration").frame(width: 58, alignment: .trailing)
-                }.padding(.leading, 12).padding(.trailing, 14).padding(.bottom, 2)
-                Line()
-                List(selection: $pane.selection) {
-                    ForEach(rows) { r in
-                        ListRow(r: r, c: c, report: pane.info && r.media != nil ? report(r) : nil).tag(r.path)
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        head("NAME", "name").frame(width: nameW, alignment: .leading)
+                        ForEach(cols, id: \.0.key) { c, w in head(c.title, c.key).frame(width: w, alignment: c.right ? .trailing : .leading) }
+                    }.padding(.leading, 12).padding(.bottom, 2)
+                    Line()
+                    List(selection: $pane.selection) {
+                        ForEach(rows) { r in ListRow(r: r, nameW: nameW, cols: cols).tag(r.path) }
                     }
+                    .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in pane.openItems(sel) })
+                    .scrollContentBackground(.hidden).background(Color(white: 0.07))
+                    .accessibilityIdentifier("list-of-\(pane.index + 1)")
                 }
-                .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in pane.openItems(sel) })
-                .scrollContentBackground(.hidden).background(Color(white: 0.07))
-                .accessibilityIdentifier("list-of-\(pane.index + 1)")
+                .frame(width: max(total, g.size.width), height: g.size.height, alignment: .topLeading)
             }
         }
-    }
-}
-
-// the report of one line for INFO, asked for when the line is drawn ("…" until MediaInfo answers)
-extension ListView {
-    func report(_ r: Row) -> String {
-        if let t = Media.shared.report(r.path, r.mtime, full: pane.infoFull) { return t }
-        DispatchQueue.main.async { Media.shared.wantReport(r.path, mtime: r.mtime, full: pane.infoFull) }
-        return "…"
     }
 }
 
 struct ListRow: View {
-    let r: Row; let c: Set<String>; var report: String? = nil
+    let r: Row; let nameW: CGFloat; let cols: [(LCol, CGFloat)]
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-        HStack(alignment: .top, spacing: 8) {
-            HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            HStack(spacing: 6) {
                 Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
-                Text(r.name).font(.system(size: 13)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            Text(r.sizeText).font(.system(size: 12, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY)
-                .frame(width: 74, alignment: .trailing)
-            if c.contains("codec") {
-                Text(r.media?.codec ?? "").font(.system(size: 12)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
-                    .frame(width: 104, alignment: .leading)
+                Text(r.name).font(.system(size: 13)).foregroundColor(.white).lineLimit(1).fixedSize()
+            }.frame(width: nameW, alignment: .leading)
+            ForEach(cols, id: \.0.key) { c, w in
+                Text(c.text(r)).font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(c.key == "size" && r.isDir ? AMBER : c.key == "duration" ? .white : GREY)
+                    .lineLimit(1).fixedSize().frame(width: w, alignment: c.right ? .trailing : .leading)
             }
-            if c.contains("res") {
-                Text(r.media?.res ?? "").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY).frame(width: 84, alignment: .trailing)
-            }
-            if c.contains("fps") {
-                Text(r.media?.fpsText ?? "").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY).frame(width: 44, alignment: .trailing)
-            }
-            if c.contains("rate") {
-                Text(r.media?.rateText ?? "").font(.system(size: 12, design: .monospaced)).foregroundColor(GREY).frame(width: 76, alignment: .trailing)
-            }
-            if c.contains("kind") {
-                Text(r.kind).font(.system(size: 12)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
-                    .frame(width: 92, alignment: .leading)
-            }
-            if c.contains("date") {
-                Text(DATEFMT.string(from: r.mtime)).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
-                    .frame(width: 112, alignment: .leading)
-            }
-            Text(r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…")
-                .font(.system(size: 12, design: .monospaced)).foregroundColor(GREY).frame(width: 58, alignment: .trailing)
-        }
-        // the details line, the whole width of the pane: every fact MediaInfo gave, wrapped, never cut
-        if let m = r.media, !m.line.isEmpty {
-            Text(m.line).font(.system(size: 11, design: .monospaced)).foregroundColor(Color(white: 0.62))
-                .padding(.leading, 22).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-        }
-        if let t = report { ReportView(text: t) }
         }
         .padding(.vertical, 1)
         .accessibilityElement(children: .combine)

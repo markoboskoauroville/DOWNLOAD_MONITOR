@@ -4,9 +4,9 @@
 // The mediainfo command line (github.com/MediaArea/MediaInfo) is inside the app (Contents/Resources/mediainfo, put
 // there by the GitHub workflow from MediaArea's own Mac build); without it the Homebrew copy is used. For every video,
 // sound and picture a pane shows, two at a time in the background, once per file and date:
-//   mediainfo --Output=JSON <file>   -> the facts for the columns and the details line (codec, size in pixels, frame
-//                                       rate, bit rate, bit depth and chroma, colour, HDR, audio, timecode, scan)
-//   mediainfo [--Full] <file>        -> the whole report, track by track, shown under the line when INFO is on
+//   mediainfo --Output=JSON <file>   -> the facts for the LIST columns (v10: one line per file, scrolled sideways):
+//                                       time, size in pixels, frame rate, bit rate, codec, bit depth and chroma,
+//                                       colour and HDR, scan, audio, timecode, the application that wrote it, tracks
 import Foundation
 import SwiftUI
 
@@ -50,7 +50,6 @@ func rate(_ b: Double) -> String {
 final class Media: ObservableObject {
     static let shared = Media()
     @Published var facts: [String: MediaFacts] = [:]
-    @Published var reports: [String: String] = [:]
     private var busy = Set<String>()
     private let q: OperationQueue = {
         let q = OperationQueue(); q.maxConcurrentOperationCount = 2; q.qualityOfService = .utility; return q
@@ -79,18 +78,7 @@ final class Media: ObservableObject {
             DispatchQueue.main.async { self.facts[k] = f; self.busy.remove(k) }
         }
     }
-    // the whole report (INFO): the MediaInfo text view, or with full every field it knows in every form
-    func wantReport(_ path: String, mtime: Date, full: Bool) {
-        let k = key(path, mtime) + (full ? "|full" : "")
-        guard let b = Media.binary, reports[k] == nil, !busy.contains(k) else { return }
-        busy.insert(k)
-        q.addOperation {
-            let t = Media.run(b, (full ? ["--Full"] : []) + [path])
-            DispatchQueue.main.async { self.reports[k] = Media.clean(t, path); self.busy.remove(k) }
-        }
-    }
     func of(_ path: String, _ mtime: Date) -> MediaFacts? { facts[key(path, mtime)] }
-    func report(_ path: String, _ mtime: Date, full: Bool) -> String? { reports[key(path, mtime) + (full ? "|full" : "")] }
 
     static func run(_ bin: String, _ args: [String]) -> String {
         let p = Process(); p.executableURL = URL(fileURLWithPath: bin); p.arguments = args
@@ -100,12 +88,6 @@ final class Media: ObservableObject {
         p.waitUntilExit()
         return String(decoding: d, as: UTF8.self)
     }
-    // the full path is the first line of the report; the pane already shows it
-    static func clean(_ t: String, _ path: String) -> String {
-        t.components(separatedBy: "\n").filter { !$0.hasPrefix("Complete name") }.joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     static func parse(_ json: String) -> MediaFacts {
         var f = MediaFacts()
         guard let d = json.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
@@ -163,27 +145,3 @@ final class Media: ObservableObject {
     }
 }
 
-// INFO under a line: the report track by track, the name of each field grey and its value white, wrapped, never cut
-struct ReportView: View {
-    let text: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, l in
-                if let r = l.range(of: " : ") {
-                    let k = l[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
-                    let v = String(l[r.upperBound...])
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(k).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
-                            .frame(width: 210, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                        Text(v).font(.system(size: 11, design: .monospaced)).foregroundColor(.white)
-                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    }
-                } else if !l.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Text(l.uppercased()).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(AMBER)
-                        .padding(.top, 4)
-                }
-            }
-        }
-        .padding(.leading, 22).padding(.vertical, 4)
-    }
-}

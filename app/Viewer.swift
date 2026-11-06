@@ -5,9 +5,9 @@
 // which is activated with the spacebar". And: "you can create this code so you can through the Python API control it."
 //
 // Thumbs: real thumbnails (QLThumbnailGenerator; a video gives a frame), cached by file, size and date.
-// QL: Finder's own Quick Look panel (QLPreviewPanel). It shows the selected file of one pane; ↑ ↓ (and ← →) in the
-//     panel move that pane's selection to the file before or after and the panel follows (and plays); Escape or
-//     Space closes it. PREVIEW on a pane: one click on a file opens it full screen.
+// QL: Finder's own Quick Look panel (QLPreviewPanel). It shows the selected file of one pane; ↑ ↓ in the panel move
+//     that pane's selection to the file before or after and the panel follows (and plays); ← → (v10) jump to the pane
+//     at the left or right and play its file; a click in another pane does the same; Escape or Space closes it. PREVIEW on a pane: one click on a file opens it full screen.
 // Keys: Space toggles the preview for the active pane; in ICONS ← → ↑ ↓ move the selection, ⌘↓ opens, ⌘↑ goes up.
 // Commands: what `dlmon.py view …` puts on the server (POST /view), polled by the window and applied here.
 import SwiftUI
@@ -66,12 +66,27 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
         } else { panel.orderOut(nil) }
     }
     func toggle(_ p: Pane) { if visible { close() } else { show(p, full: p.preview) } }
-    // the pane's selection moved (a click, an arrow, Python): the panel shows the new file
+    // a pane's selection moved (a click, an arrow, Python): the panel shows the new file. v10: a click in ANOTHER pane
+    // takes the preview there too, it does not stay in the old folder
     func follow(_ p: Pane) {
-        guard visible, pane === p, let panel = panel else { return }
+        guard visible, let panel = panel else { return }
         if p.selectedFile == nil { return }
+        pane = p
+        Panes.shared.active = p.index
         panel.dataSource = self
         panel.reloadData()
+    }
+    // v10 (Marko 6.11.2026: "when I'm previewing my files with spacebar, I need to be able to jump between panes ...
+    // when I jump another pane, it will start to play that file. It will not stay in the old folder"): ← → in the
+    // preview go to the pane at the left / right (round at the ends); it plays that pane's selected file, or its first
+    func jump(_ by: Int) {
+        let ps = Panes.shared.list
+        guard ps.count > 1, let cur = pane, let i = ps.firstIndex(where: { $0 === cur }) else { return }
+        for k in 1..<ps.count {
+            let t = ps[((i + by * k) % ps.count + ps.count) % ps.count]
+            if t.selectedFile == nil { t.move(1, filesOnly: true) }      // nothing chosen there: its first file
+            if t.selectedFile != nil { follow(t); return }
+        }
     }
 
     // QLPreviewPanelDataSource: one item, the selected file, so the arrows come to us and move the pane
@@ -83,8 +98,10 @@ final class QL: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         guard let e = event, e.type == .keyDown, let p = pane else { return false }
         switch e.keyCode {
-        case 125, 124: p.move(1, filesOnly: true); follow(p); return true     // ↓ →: the next file
-        case 126, 123: p.move(-1, filesOnly: true); follow(p); return true    // ↑ ←: the file before
+        case 125: p.move(1, filesOnly: true); follow(p); return true          // ↓: the next file
+        case 126: p.move(-1, filesOnly: true); follow(p); return true         // ↑: the file before
+        case 124: jump(1); return true                                          // →: the pane at the right plays
+        case 123: jump(-1); return true                                         // ←: the pane at the left plays
         case 53, 49: close(); return true                                       // Escape, Space
         default: return false
         }
@@ -181,6 +198,10 @@ enum ViewCommands {
             return "selected \(file)"
         case "close":
             QL.shared.close(); return "preview closed"
+        case "left", "right":
+            guard QL.shared.visible else { return "no preview open" }
+            QL.shared.jump(c["action"] as? String == "right" ? 1 : -1)
+            return QL.shared.file.map { "pane \((QL.shared.pane?.index ?? 0) + 1) now " + $0 } ?? "no file"
         case "next", "prev":
             guard let p = QL.shared.visible ? QL.shared.pane : ps.activePane else { return "no pane" }
             p.move(c["action"] as? String == "next" ? 1 : -1, filesOnly: true)
@@ -188,14 +209,6 @@ enum ViewCommands {
             return p.selectedFile.map { "now " + $0 } ?? "no file"
         case "front":
             front(); return "in front"
-        case "info":
-            // INFO (v8): on = the MediaInfo report under every media line, full = every field, off = the details line only
-            let v = (c["info"] as? String ?? "on").lowercased()
-            ps.pick(n).forEach { p in
-                p.info = v != "off"; p.infoFull = v == "full"
-                if p.info { p.mode = "list" }
-            }
-            return "info \(v)" + (Media.binary == nil ? " (no mediainfo found)" : " (\(Media.binary!))")
         case "show", "hide":
             let name = c["part"] as? String ?? ""
             let on = c["action"] as? String == "show"
