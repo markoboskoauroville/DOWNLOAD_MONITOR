@@ -25,7 +25,7 @@ func duration(_ s: Double) -> String {
     let t = Int(s.rounded())
     return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t % 3600 / 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
 }
-let DATEFMT: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d.M.yyyy  HH:mm"; return f }()
+let DATEFMT: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d.M.yyyy HH:mm"; return f }()
 
 struct Item: Identifiable, Hashable {
     let path: String; let name: String; let isDir: Bool; let isLink: Bool; let size: Int64; let mtime: Date
@@ -102,7 +102,8 @@ final class Pane: ObservableObject, Identifiable {
     @Published var mode: String { didSet { UserDefaults.standard.set(mode, forKey: "pane.\(index).mode") } }
     @Published var iconSize: Double { didSet { UserDefaults.standard.set(iconSize, forKey: "pane.\(index).icon") } }
     @Published var preview: Bool { didSet { UserDefaults.standard.set(preview, forKey: "pane.\(index).preview") } }
-    @Published var sort: [KeyPathComparator<Row>] = [KeyPathComparator(\Row.name, comparator: .localizedStandard)]
+    @Published var sortKey: String { didSet { UserDefaults.standard.set(sortKey, forKey: "pane.\(index).sort") } }
+    @Published var ascending: Bool { didSet { UserDefaults.standard.set(ascending, forKey: "pane.\(index).asc") } }
     var columns = 1                                         // icons per row in ICONS (for ↑ ↓)
     var anchor: String?                                     // where a shift click starts
     private var back: [String] = []
@@ -118,6 +119,8 @@ final class Pane: ObservableObject, Identifiable {
         mode = d.string(forKey: "pane.\(index).mode") ?? "list"
         iconSize = d.object(forKey: "pane.\(index).icon") as? Double ?? 128
         preview = d.bool(forKey: "pane.\(index).preview")
+        sortKey = d.string(forKey: "pane.\(index).sort") ?? "name"
+        ascending = d.object(forKey: "pane.\(index).asc") as? Bool ?? true
         load()
         // the sizes are measured again while the pane is open (a copy filling a folder, a file added deep inside)
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.load() }
@@ -188,16 +191,32 @@ final class Pane: ObservableObject, Identifiable {
         source = s
     }
 
+    // a click on a column title: the same column turns the order round, another sorts by it (sizes, dates and
+    // durations biggest and newest first, as Finder does)
+    func sortBy(_ key: String) {
+        if sortKey == key { ascending.toggle() } else { sortKey = key; ascending = key == "name" || key == "kind" }
+    }
+    static func less(_ key: String, _ a: Row, _ b: Row) -> Bool {
+        switch key {
+        case "size": if a.size != b.size { return a.size < b.size }
+        case "kind": let c = a.kind.localizedStandardCompare(b.kind); if c != .orderedSame { return c == .orderedAscending }
+        case "date": if a.mtime != b.mtime { return a.mtime < b.mtime }
+        case "duration": if a.duration != b.duration { return a.duration < b.duration }
+        default: break
+        }
+        return a.name.localizedStandardCompare(b.name) == .orderedAscending
+    }
     // the lines in the order on screen: sorted by the column chosen; by name, the folders first (as before)
     var rows: [Row] {
         let sizes = Sizer.shared.sizes, durs = Durations.shared
-        var r = items.map { i in
+        let key = sortKey, up = ascending
+        var r: [Row] = items.map { i in
             Row(path: i.path, name: i.name, isDir: i.isDir, isLink: i.isLink,
                 size: i.isLink ? 0 : i.isDir ? (sizes[i.path] ?? -1) : i.size, kind: i.kind, mtime: i.mtime,
                 duration: i.isMedia ? durs.of(i.path, i.mtime) : -1)
-        }.sorted(using: sort)
-        let byName = sort.first.map { $0.keyPath == (\Row.name as PartialKeyPath<Row>) } ?? true
-        if byName { r = r.filter { $0.isDir } + r.filter { !$0.isDir } }
+        }
+        r.sort { a, b in up ? Pane.less(key, a, b) : Pane.less(key, b, a) }
+        if key == "name" { r = r.filter { $0.isDir } + r.filter { !$0.isDir } }
         return r
     }
     var selectedBytes: Int64 {
@@ -252,6 +271,7 @@ final class Pane: ObservableObject, Identifiable {
     }
     func state() -> [String: Any] {
         ["pane": index + 1, "path": path, "mode": mode, "icon_size": Int(iconSize), "preview": preview,
+         "sort": sortKey + (ascending ? " up" : " down"),
          "items": items.count, "selected": rows.filter { selection.contains($0.path) }.map { $0.path }]
     }
 }
@@ -409,34 +429,63 @@ struct CrumbFace<L: View>: View {
     }
 }
 
+// LIST: a column title is a button (click again: the other way round); the name wraps, nothing is cut. A narrow pane
+// leaves out KIND (under 560 pt), then MODIFIED (under 460 pt); a wider window shows them again.
 struct ListView: View {
     @ObservedObject var pane: Pane
     let rows: [Row]
+    func head(_ title: String, _ key: String) -> some View {
+        let on = pane.sortKey == key
+        let label = on ? title + (pane.ascending ? " ▲" : " ▼") : title
+        return Word(text: label, on: on, size: 10) { pane.sortBy(key) }
+            .accessibilityIdentifier("sort-\(pane.index + 1)-\(key)")
+    }
     var body: some View {
-        Table(rows, selection: $pane.selection, sortOrder: $pane.sort) {
-            TableColumn("NAME", value: \Row.name, comparator: .localizedStandard) { r in
-                HStack(spacing: 6) {
-                    Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
-                    Text(r.name).fixedSize(horizontal: false, vertical: true)
+        GeometryReader { g in
+            let kind = g.size.width >= 560, date = g.size.width >= 460
+            VStack(spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    head("NAME", "name").frame(maxWidth: .infinity, alignment: .leading)
+                    head("SIZE", "size").frame(width: 74, alignment: .trailing)
+                    if kind { head("KIND", "kind").frame(width: 92, alignment: .leading) }
+                    if date { head("MODIFIED", "date").frame(width: 112, alignment: .leading) }
+                    head("TIME", "duration").frame(width: 58, alignment: .trailing)
+                }.padding(.leading, 12).padding(.trailing, 14).padding(.bottom, 2)
+                Line()
+                List(selection: $pane.selection) {
+                    ForEach(rows) { r in ListRow(r: r, kind: kind, date: date).tag(r.path) }
                 }
-            }.width(min: 140, ideal: 280)
-            TableColumn("SIZE", value: \Row.size) { r in
-                Text(r.sizeText).font(.system(size: 12, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY)
-            }.width(min: 70, ideal: 90)
-            TableColumn("KIND", value: \Row.kind, comparator: .localizedStandard) { r in
-                Text(r.kind).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
-            }.width(min: 60, ideal: 110)
-            TableColumn("MODIFIED", value: \Row.mtime) { r in
-                Text(DATEFMT.string(from: r.mtime)).font(.system(size: 12, design: .monospaced)).foregroundColor(GREY)
-            }.width(min: 120, ideal: 140)
-            TableColumn("DURATION", value: \Row.duration) { r in
-                Text(r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…")
-                    .font(.system(size: 12, design: .monospaced)).foregroundColor(GREY)
-            }.width(min: 64, ideal: 76)
+                .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in pane.openItems(sel) })
+                .scrollContentBackground(.hidden).background(Color(white: 0.07))
+                .accessibilityIdentifier("list-of-\(pane.index + 1)")
+            }
         }
-        .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { sel in pane.openItems(sel) })
-        .scrollContentBackground(.hidden).background(Color(white: 0.07))
-        .accessibilityIdentifier("table-\(pane.index + 1)")
+    }
+}
+
+struct ListRow: View {
+    let r: Row; let kind: Bool; let date: Bool
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(nsImage: Thumbs.icon(r.path)).resizable().frame(width: 16, height: 16)
+                Text(r.name).font(.system(size: 13)).foregroundColor(.white).fixedSize(horizontal: false, vertical: true)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Text(r.sizeText).font(.system(size: 12, design: .monospaced)).foregroundColor(r.isDir ? AMBER : GREY)
+                .frame(width: 74, alignment: .trailing)
+            if kind {
+                Text(r.kind).font(.system(size: 12)).foregroundColor(GREY).fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 92, alignment: .leading)
+            }
+            if date {
+                Text(DATEFMT.string(from: r.mtime)).font(.system(size: 11, design: .monospaced)).foregroundColor(GREY)
+                    .frame(width: 112, alignment: .leading)
+            }
+            Text(r.duration > 0 ? duration(r.duration) : r.duration == -1 ? "" : "…")
+                .font(.system(size: 12, design: .monospaced)).foregroundColor(GREY).frame(width: 58, alignment: .trailing)
+        }
+        .padding(.vertical, 1)
+        .accessibilityElement(children: .combine)
     }
 }
 

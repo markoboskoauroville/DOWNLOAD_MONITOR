@@ -503,8 +503,8 @@ struct MonitorView: View {
             topRow.padding(.top, -10).padding(.trailing, -10)
             Line().padding(.top, 4)
             VSplitView {
-                paneArea.frame(minHeight: 300, idealHeight: 520)
-                queue.frame(minHeight: 220, idealHeight: 400)
+                paneArea.frame(minHeight: 340, idealHeight: 600)
+                queue.frame(minHeight: 160, idealHeight: 260)
             }
             Line()
             HStack {
