@@ -444,32 +444,45 @@ struct IconsView: View {
     @ObservedObject var pane: Pane
     let rows: [Row]
     var cell: CGFloat { CGFloat(pane.iconSize) + 16 }
+    func fit(_ w: CGFloat) { pane.columns = max(1, Int((w - 8) / (cell + 8))) }
+
+    func one(_ r: Row) -> some View {
+        let p = pane
+        let path: String = r.path
+        let face = IconCell(r: r, size: CGFloat(p.iconSize), selected: p.selection.contains(path))
+        let tapped = face.id(path)
+            .gesture(TapGesture(count: 2).onEnded { p.openItems([path]) })
+            .simultaneousGesture(TapGesture().onEnded { p.click(path) })
+        let named = tapped.accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(r.name))
+            .accessibilityValue(Text(r.sizeText))
+            .accessibilityAddTraits(.isButton)
+        let ident: String = "item-\(p.index + 1)-\(r.name)"
+        return named.accessibilityIdentifier(ident)
+            .accessibilityAction { p.selection = [path] }
+    }
+
+    var grid: some View {
+        let cols: [GridItem] = [GridItem(.adaptive(minimum: cell, maximum: cell), spacing: 8, alignment: .top)]
+        return LazyVGrid(columns: cols, alignment: .leading, spacing: 10) {
+            ForEach(rows) { r in one(r) }
+        }.padding(8)
+    }
+
+    func scrolled(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView { grid }
+            .onChange(of: pane.selection) { s in
+                guard s.count == 1, let target = s.first else { return }
+                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(target) }
+            }
+    }
+
     var body: some View {
         GeometryReader { g in
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: cell, maximum: cell), spacing: 8, alignment: .top)],
-                              alignment: .leading, spacing: 10) {
-                        ForEach(rows) { r in
-                            IconCell(r: r, size: CGFloat(pane.iconSize), selected: pane.selection.contains(r.path))
-                                .id(r.path)
-                                .gesture(TapGesture(count: 2).onEnded { pane.openItems([r.path]) })
-                                .simultaneousGesture(TapGesture().onEnded { pane.click(r.path) })
-                                .accessibilityElement(children: .ignore)
-                                .accessibilityLabel(r.name).accessibilityValue(r.sizeText)
-                                .accessibilityAddTraits(.isButton)
-                                .accessibilityIdentifier("item-\(pane.index + 1)-\(r.name)")
-                                .accessibilityAction(.default) { pane.selection = [r.path] }
-                        }
-                    }.padding(8)
-                }
-                .onChange(of: pane.selection) { s in
-                    if s.count == 1, let p = s.first { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(p) } }
-                }
-            }
-            .onAppear { pane.columns = max(1, Int((g.size.width - 8) / (cell + 8))) }
-            .onChange(of: g.size.width) { w in pane.columns = max(1, Int((w - 8) / (cell + 8))) }
-            .onChange(of: pane.iconSize) { _ in pane.columns = max(1, Int((g.size.width - 8) / (cell + 8))) }
+            ScrollViewReader { proxy in scrolled(proxy) }
+                .onAppear { fit(g.size.width) }
+                .onChange(of: g.size.width) { w in fit(w) }
+                .onChange(of: pane.iconSize) { _ in fit(g.size.width) }
         }
         .background(Color(white: 0.07))
     }
